@@ -678,8 +678,9 @@ License
 
 This project is developed for internship/project purposes.
 
-## Author
+Author
 
-- **Name:** Naina Kharola
-- **College / Institution:** Graphic Era Hill University
-- **Project:** Web Portal – Student Internship Management System
+Naina Kharola
+
+Student Internship Management System
+Web Portal Project
