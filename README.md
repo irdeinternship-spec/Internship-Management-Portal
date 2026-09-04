@@ -1,251 +1,685 @@
-# 🎓 Internship Management Portal
+# Web Portal – Student Internship Management System
 
-A full-stack, enterprise-grade web application designed for managing the complete lifecycle of student internships, administrative workflows, document generation (Gyapan, Offer Letters, and Certificates), and secure record management at the **Instruments Research & Development Establishment (IRDE), DRDO**.
+A full-stack web application developed for managing the complete student internship lifecycle, including student registration, document submission, verification, administration, internship records, certificate generation, and related administrative activities.
 
----
-
-## 📌 Overview
-
-The **Internship Management Portal** provides a centralized platform that bridges the gap between student applicants and institute administration. It automates repetitive administrative procedures, ensures strict role-based access control, securely stores sensitive student records with AES-256 field-level encryption, and generates official documents in real time.
-
-### 🌟 Key Capabilities
-- 📝 **Student Registration & Portal**: Dual pathways for Paid and Unpaid internships, real-time application tracking, profile management, and document uploads.
-- 🛡️ **Administrative Dashboard**: Real-time analytics, filtering by branch/institution/financial year, multi-stage approval/rejection workflows, and batch operations.
-- 🏢 **Division & Seat Capacity Management**: Configurable intake quotas and division-wise seat allocations.
-- 📑 **Dynamic Document Generation**: Automated PDF generation via Puppeteer for official Gyapans, customized Offer Letters, and sequentially numbered Internship Certificates.
-- 🔒 **Data Protection & Secure Storage**: S3-compatible MinIO object storage with authenticated streaming proxy and AES-256 encryption for sensitive records (Aadhaar, Bank details).
-- ✉️ **Automated Notifications**: Email alerts for application status updates, acceptance, and official communications via Nodemailer.
+The system provides separate workflows for students and administrators and uses PostgreSQL for application data and MinIO for secure local object/file storage.
 
 ---
 
-## 🏗️ System Architecture
+## Overview
 
-```
-                                  ┌─────────────────────────┐
-                                  │      React Frontend     │
-                                  │       Vite + JSX        │
-                                  │    localhost:5173       │
-                                  └────────────┬────────────┘
-                                               │
-                                               │ REST API (JSON / FormData)
-                                               │ Credentials: Include (HttpOnly Cookie)
-                                               ▼
-                                  ┌─────────────────────────┐
-                                  │    Node.js + Express    │
-                                  │        Backend          │
-                                  │     localhost:5000      │
-                                  └────────────┬────────────┘
-                                               │
-                         ┌─────────────────────┴─────────────────────┐
-                         │                                           │
-                         ▼                                           ▼
-                ┌─────────────────┐                         ┌─────────────────┐
-                │   PostgreSQL    │                         │      MinIO      │
-                │                 │                         │  Object Storage │
-                │ Student Records │                         │                 │
-                │ Admin Records   │                         │ Student Photos  │
-                │ Configurations  │                         │ Resumes & Docs  │
-                │ Activity Logs   │                         │ Generated PDFs  │
-                │ Gyapan & Certs  │                         │ Offer Letters   │
-                └─────────────────┘                         └─────────────────┘
-                         │
-                         ▼
-                ┌─────────────────┐
-                │    Puppeteer    │
-                │                 │
-                │ Dynamic PDF     │
-                │ Document Engine │
-                └─────────────────┘
-```
+The Web Portal is designed to simplify and centralize internship management activities.
+
+The system allows:
+
+- Students to register for internships.
+- Students to submit required documents.
+- Administrators to verify and manage student applications.
+- Administrators to manage internship-related information.
+- Administrators to configure internship settings.
+- Generation of internship certificates and other documents.
+- Sequential certificate number allocation.
+- Storage of application data in PostgreSQL.
+- Storage of uploaded files in MinIO.
+- Management of administration data and activity logs.
 
 ---
 
-## 💻 Tech Stack
+# Main Features
 
-| Layer | Technologies |
-| :--- | :--- |
-| **Frontend** | React 18, Vite, React Router v6, Lucide React, Modern CSS & Responsive Design |
-| **Backend** | Node.js, Express.js, `cookie-parser`, `cors`, `helmet`, `express-rate-limit` |
-| **Database** | PostgreSQL (`pg`), JSONB hybrid querying, automated index initialization |
-| **Object Storage** | MinIO (S3-compatible SDK `@aws-sdk/client-s3`) |
-| **Document Generation** | Puppeteer, Puppeteer-Core (Headless Chrome) |
-| **Security & Auth** | JWT (HttpOnly Cookies), AES-256-CBC Field Encryption, Bcrypt.js |
-| **Email Service** | Nodemailer, Google OAuth2 / SMTP |
+## Student Management
 
----
+- Student registration and profile management.
+- Internship application management.
+- Application status tracking.
+- Reference ID based student records.
+- Student document uploads.
+- Student authentication and session management.
+- Storage of student information in PostgreSQL.
 
-## 🚀 Getting Started & Installation
+## Admin Management
 
-### Prerequisites
-Make sure you have the following installed on your machine:
-- **Node.js** (v18.x or v20.x recommended)
-- **PostgreSQL** (v14+) running locally or accessible remotely
-- **MinIO Server** for local S3 object storage
-- **Git**
+Administrators can:
 
----
+- View and manage student applications.
+- Verify submitted information and documents.
+- Manage internship records.
+- Manage administration settings.
+- Configure internship capacities and categories.
+- Generate and manage certificates.
+- View system activity.
+- Manage certificate numbering.
 
-### 1. Clone the Repository
-```bash
-git clone https://github.com/irdeinternship-spec/Internship-Management-Portal.git
-cd Internship-Management-Portal
-```
+## PostgreSQL Database
 
----
+PostgreSQL is used as the primary database for application data.
 
-### 2. Database Setup (PostgreSQL)
-Create a new PostgreSQL database (e.g. `internship_portal`):
-```sql
-CREATE DATABASE internship_portal;
-```
+The system stores data such as:
 
----
+- Students
+- Administrators
+- Administration settings
+- Gyapan records
+- Activity logs
+- Internship durations
+- Configuration data
 
-### 3. Object Storage Setup (MinIO)
-1. Download and start your MinIO server:
-```bash
-minio.exe server C:\minio\data --console-address ":9001"
-```
-2. Log into the MinIO Console (`http://localhost:9001`) and create a bucket named `webportal`.
+PostgreSQL JSONB structures are used where flexible application data needs to be stored.
+
+Database indexes are created for frequently accessed fields to improve query performance.
 
 ---
 
-### 4. Backend Configuration & Setup
+# MinIO File Storage
 
-1. Navigate to the `backend` directory:
-```bash
-cd backend
-```
+MinIO is used as the local S3-compatible object storage system.
 
-2. Install dependencies:
-```bash
-npm install
-```
+Uploaded files are stored in a MinIO bucket instead of being stored directly inside the application directory.
 
-3. Create a `.env` file in the `backend/` folder based on `.env.example`:
-```env
-PORT=5000
-NODE_ENV=development
-JWT_SECRET=your_super_secret_jwt_key_here
-ENCRYPTION_KEY=32_byte_hex_or_string_key_for_aes256
+Examples of stored files include:
 
-# Database
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=internship_portal
-DB_USER=postgres
-DB_PASSWORD=your_postgres_password
+- Student photographs
+- Aadhaar documents
+- Resumes
+- Permission letters
+- Internship documents
+- Generated certificates
+- Other uploaded application documents
 
-# Admin Config
-MAIN_ADMIN_EMAIL=admin@drdo.local
+The application uses a dedicated MinIO bucket:
 
-# MinIO (S3) Configuration
-MINIO_ENDPOINT=localhost
-MINIO_PORT=9000
-MINIO_USE_SSL=false
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
-MINIO_BUCKET=webportal
-MINIO_REGION=us-east-1
+```text
+webportal
 
-# CORS
-CORS_ORIGINS=http://localhost:5173
+Files are organized using student-specific prefixes such as:
 
-# Email (Optional)
-EMAIL_ENABLED=false
-```
+students/<referenceId>/
 
-4. Initialize the database schema & seed administrator:
-```bash
-npm run db:init
-node seedAdmin.js
-```
+MinIO connectivity and bucket availability are checked when the backend starts.
 
-5. Start the backend server:
-```bash
-npm run dev
-```
-*Backend runs on `http://localhost:5000`.*
+If the configured bucket does not exist, the application can create it automatically.
 
----
+Certificate Generation
 
-### 5. Frontend Configuration & Setup
+The system supports automated internship certificate generation.
 
-1. Open a new terminal and navigate to the `web-portal` directory:
-```bash
-cd web-portal
-```
+Certificate numbers are sequentially allocated.
 
-2. Install dependencies:
-```bash
-npm install
-```
+For example, if the administrator sets:
 
-3. Create `.env` file in `web-portal/`:
-```env
-VITE_API_URL=http://localhost:5000
-```
+Starting Certificate Number = 104
 
-4. Start the frontend development server:
-```bash
-npm run dev
-```
-*Frontend runs on `http://localhost:5173`.*
+the system generates:
 
----
+Certificate 1 → 104
+Certificate 2 → 105
+Certificate 3 → 106
+Certificate 4 → 107
 
-## 📁 Project Structure
+The administrator can change the next certificate number from the system configuration page.
 
-```
-Internship-Management-Portal/
+Certificate allocation is handled using PostgreSQL transaction and row-level locking to prevent duplicate certificate numbers when multiple requests occur at the same time.
+
+Re-downloading an already generated certificate does not consume another certificate number.
+
+Document Generation
+
+The backend uses Puppeteer for dynamic document generation.
+
+It is used for generating documents such as:
+
+Internship certificates
+Offer letters
+Gyapans
+Other PDF-based documents
+
+Documents are generated dynamically using student and administration data.
+
+Security Features
+
+The application includes several security improvements.
+
+Authentication
+
+JWT-based authentication is used for protected application areas.
+
+Authentication tokens are handled through secure backend-configured cookies.
+
+Protected APIs verify authentication before allowing access to sensitive operations.
+
+Password Security
+
+Passwords are securely hashed before storage.
+
+Passwords and authentication credentials are not printed in application logs.
+
+Environment Variables
+
+Sensitive configuration values are stored in environment variables rather than being hardcoded into the source code.
+
+Examples include:
+
+Database credentials
+JWT secret
+MinIO credentials
+Application configuration
+File Upload Security
+
+Uploaded files are validated before storage.
+
+The system includes protections such as:
+
+File type validation
+Filename sanitization
+Upload restrictions
+Protected file access
+MinIO-based file storage
+SQL Injection Protection
+
+Database operations use parameterized PostgreSQL queries.
+
+Dynamic table and column operations are restricted using allowlists where required.
+
+Security Headers
+
+Security-related HTTP headers are configured on the backend.
+
+Rate Limiting
+
+Rate limiting is applied to protect sensitive endpoints from excessive requests and automated abuse.
+
+Technology Stack
+Frontend
+React.js
+Vite
+JavaScript
+JSX
+CSS
+Backend
+Node.js
+Express.js
+PostgreSQL
+pg
+JWT
+Cookie-based authentication
+File Storage
+MinIO
+S3-compatible object storage
+AWS SDK for JavaScript
+Document Generation
+Puppeteer
+Other Technologies
+Nodemailer
+Multer
+CORS
+dotenv
+bcrypt
+Archiver
+Project Structure
+Web-Portal/
+│
 ├── backend/
-│   ├── config/             # System configuration
-│   ├── controllers/        # Route controllers (Admin, Student, Gyapan, Offer Letters)
-│   ├── middleware/         # Auth, Role Verification, File Security, Upload middleware
-│   ├── models/             # Schema definitions and data access models
-│   ├── routes/             # Express API endpoints
-│   ├── services/           # DB Store, MinIO S3, Puppeteer PDF generator, Email
-│   ├── templates/          # HTML templates for certificates & offer letters
-│   ├── utils/              # Encryption utilities and helpers
-│   ├── db.js               # PostgreSQL connection pool
-│   └── server.js           # Main Express server entry point
+│   ├── server.js
+│   ├── db.js
+│   ├── package.json
+│   ├── .env
+│   ├── controllers/
+│   ├── routes/
+│   ├── middleware/
+│   ├── services/
+│   └── ...
 │
 ├── web-portal/
 │   ├── src/
-│   │   ├── auth/           # Authentication context and hooks
-│   │   ├── components/     # Reusable UI components & Protected Routes
-│   │   ├── pages/          # Dashboard, Student Portal, Gyapan Editor, Certificates
-│   │   ├── services/       # Frontend API communication layer
-│   │   ├── styles/         # CSS style definitions
-│   │   ├── App.jsx         # App routes & lazy-loading setup
-│   │   └── main.jsx        # React root entry point
-│   ├── index.html
-│   └── vite.config.js
+│   ├── public/
+│   ├── package.json
+│   └── ...
 │
-└── README.md
-```
+├── README.md
+└── ...
+Database Structure
 
----
+The application uses PostgreSQL database:
 
-## 🔒 Security Features
+Webportal
 
-- **HttpOnly Cookies**: Prevents client-side script access to sensitive authentication tokens, neutralizing XSS session hijacking.
-- **AES-256 Field Encryption**: Encrypts Aadhaar numbers and financial/bank account details at rest before storing in PostgreSQL.
-- **Protected File Access Proxy**: All documents uploaded to MinIO are routed through authentication middleware (`protectFileAccess`) with `nosniff` and strict sandbox `Content-Security-Policy`.
-- **Brute-Force & Rate Limiting**: Implements IP-based rate limiting on authentication and registration endpoints.
-- **No-Cache Headers**: Prevents shared or browser caches from retaining authenticated views after logout.
+Important database tables include:
 
----
+students
+admins
+administration
+gyapan
+activity_logs
+durations
 
-## 👨‍💻 Author & Academic Credits
+The exact database structure may evolve as new application functionality is added.
 
-- **Developer**: Ayush Nautiyal
-- **Institution**: **Graphic Era Hill University**
-- **Project Domain**: Web Portal & Internship Management System
-- **Organization**: Instruments Research & Development Establishment (IRDE), DRDO
+Environment Configuration
 
----
+Create a .env file inside the backend directory.
 
-## 📜 License
+Example:
 
-This project is developed for academic, internship management, and workflow automation purposes. Refer to the organization and repository guidelines for usage terms.
+PORT=5000
+
+# PostgreSQL
+PGUSER=postgres
+PGHOST=localhost
+PGDATABASE=Webportal
+PGPASSWORD=your_postgres_password
+PGPORT=5432
+
+# JWT
+JWT_SECRET=your_secure_jwt_secret
+
+# MinIO
+MINIO_ENDPOINT=127.0.0.1
+MINIO_PORT=9000
+MINIO_USE_SSL=false
+MINIO_ACCESS_KEY=your_minio_access_key
+MINIO_SECRET_KEY=your_minio_secret_key
+MINIO_BUCKET=webportal
+
+Do not commit the .env file to GitHub.
+
+Add it to .gitignore:
+
+.env
+.env.*
+PostgreSQL Setup
+
+Install PostgreSQL on the development machine.
+
+Create the application database:
+
+CREATE DATABASE Webportal;
+
+Then configure the PostgreSQL credentials in:
+
+backend/.env
+
+The backend automatically establishes a PostgreSQL connection during startup.
+
+A successful connection should display:
+
+✅ PostgreSQL connected
+PostgreSQL test successful:
+MinIO Setup
+
+MinIO is required for local file storage.
+
+On Windows, place the MinIO executable in:
+
+C:\minio\minio.exe
+
+Create the data directory:
+
+C:\minio\data
+
+The structure should look like:
+
+C:\minio
+│
+├── minio.exe
+│
+└── data
+
+Start MinIO using PowerShell:
+
+cd C:\minio
+
+.\minio.exe server C:\minio\data --console-address ":9001"
+
+When MinIO starts successfully, it provides:
+
+API: http://127.0.0.1:9000
+WebUI: http://127.0.0.1:9001
+
+Open the MinIO web console:
+
+http://localhost:9001
+
+Create or use the configured bucket:
+
+webportal
+
+Keep the MinIO PowerShell window running while the application is using local MinIO storage.
+
+Installing the Project
+
+Clone the repository:
+
+git clone <repository-url>
+
+Move into the project:
+
+cd Web-Portal
+Backend Setup
+
+Open a terminal in the backend directory:
+
+cd backend
+
+Install dependencies:
+
+npm install
+
+Start the backend in development mode:
+
+npm run dev
+
+Or start normally:
+
+npm start
+
+A successful startup should display messages similar to:
+
+🚀 Server running on port 5000
+✅ PostgreSQL connected
+✅ MinIO connected
+✅ MinIO bucket ready: webportal
+Frontend Setup
+
+Open another terminal.
+
+Move to the frontend directory:
+
+cd web-portal
+
+Install dependencies:
+
+npm install
+
+Start the frontend:
+
+npm run dev
+
+The frontend will normally be available at:
+
+http://localhost:5173
+Running the Complete Application
+
+For local development, two services need to be running.
+
+Terminal 1 – MinIO
+cd C:\minio
+.\minio.exe server C:\minio\data --console-address ":9001"
+Terminal 2 – Backend
+cd C:\Users\DELL\Downloads\Web-Portal\backend
+npm run dev
+Terminal 3 – Frontend
+cd C:\Users\DELL\Downloads\Web-Portal\web-portal
+npm run dev
+
+Then open:
+
+http://localhost:5173
+Important URLs
+Frontend
+http://localhost:5173
+Admin Dashboard
+http://localhost:5173/admin/dashboard
+System Configuration
+http://localhost:5173/admin/system-configuration
+
+This page is used to manage system configuration such as:
+
+Internship seat capacities
+Division categories
+Starting/next certificate number
+Admin Certificates
+http://localhost:5173/admin/certificates
+
+This page provides certificate-related administrative operations such as:
+
+Certificate generation
+Certificate editing
+Batch downloading
+Printing
+Signature configuration
+MinIO Console
+http://localhost:9001
+PostgreSQL
+
+PostgreSQL normally runs on:
+
+localhost:5432
+Data Storage Architecture
+
+The application uses separate storage systems depending on the type of data.
+
+                    Web Portal
+                        |
+              +---------+---------+
+              |                   |
+          PostgreSQL             MinIO
+              |                   |
+        Application Data       Uploaded Files
+              |                   |
+       +------+-------+       +---+------------+
+       |      |       |       |   |    |       |
+    Students Admin Logs    Photos PDFs Resumes Documents
+
+PostgreSQL stores structured application information, while MinIO stores uploaded and generated files.
+
+Data Flow
+
+A typical student registration flow is:
+
+Student
+   |
+   v
+React Frontend
+   |
+   v
+Express Backend
+   |
+   +------> PostgreSQL
+   |          |
+   |          +--> Student/Application Data
+   |
+   +------> MinIO
+              |
+              +--> Uploaded Documents
+Certificate Flow
+Administrator
+      |
+      v
+System Configuration
+      |
+      v
+Starting Certificate Number
+      |
+      v
+Student Certificate Request
+      |
+      v
+PostgreSQL Transaction
+      |
+      v
+Allocate Next Certificate Number
+      |
+      v
+Puppeteer
+      |
+      v
+Generate Certificate
+      |
+      v
+MinIO
+API Architecture
+
+The backend follows a REST-style architecture.
+
+Frontend
+   |
+   v
+Express API
+   |
+   +---- Authentication
+   |
+   +---- Student APIs
+   |
+   +---- Admin APIs
+   |
+   +---- Administration APIs
+   |
+   +---- Certificate APIs
+   |
+   +---- File APIs
+   |
+   +---- Activity Log APIs
+   |
+   +---- PostgreSQL
+   |
+   +---- MinIO
+Migration from JSON Storage
+
+The earlier version of the application used JSON files for storing application information.
+
+The updated architecture uses PostgreSQL as the primary application database.
+
+The migration process includes:
+
+Reading existing JSON data.
+Mapping the data to PostgreSQL tables.
+Inserting existing records into PostgreSQL.
+Updating application APIs to use PostgreSQL.
+Verifying data through the application.
+Moving uploaded files to MinIO.
+Testing all major workflows.
+Removing legacy JSON storage only after successful verification.
+
+Legacy data should not be deleted until the PostgreSQL and MinIO implementation has been fully tested.
+
+File Storage Migration
+
+Previously, uploaded files could be stored locally inside the application.
+
+The updated system uses MinIO.
+
+Old:
+
+Application
+    |
+    +--> Local Upload Folder
+
+
+New:
+
+Application
+    |
+    +--> MinIO
+          |
+          +--> webportal
+                |
+                +--> student/referenceId/
+
+This separates application code from uploaded file storage and provides an S3-compatible storage interface.
+
+Development Commands
+Backend
+
+Install dependencies:
+
+npm install
+
+Development server:
+
+npm run dev
+
+Production-style start:
+
+npm start
+Frontend
+
+Install dependencies:
+
+npm install
+
+Development server:
+
+npm run dev
+Troubleshooting
+PostgreSQL connection error
+
+Check:
+
+PostgreSQL service is running.
+Database name is correct.
+Username is correct.
+Password is correct.
+Port is correct.
+
+Default PostgreSQL port:
+
+5432
+MinIO connection error
+
+If the backend shows:
+
+❌ MinIO connection failed
+ECONNREFUSED 127.0.0.1:9000
+
+make sure MinIO is running.
+
+Start it with:
+
+cd C:\minio
+.\minio.exe server C:\minio\data --console-address ":9001"
+
+Then verify:
+
+http://localhost:9001
+MinIO executable error
+
+If Windows reports:
+
+The specified executable is not a valid application for this OS platform.
+
+check that minio.exe is a valid Windows AMD64 executable and that the file is not corrupted.
+
+Check its size:
+
+Get-Item C:\minio\minio.exe | Select-Object Name,Length
+
+A valid downloaded executable should be much larger than a few bytes.
+
+Security Recommendations
+
+For deployment:
+
+Never commit .env files.
+Use strong PostgreSQL passwords.
+Use strong MinIO credentials.
+Use a strong randomly generated JWT secret.
+Do not use default MinIO credentials in production.
+Keep PostgreSQL inaccessible from unnecessary external networks.
+Keep MinIO private unless external access is specifically required.
+Use HTTPS in production.
+Keep dependencies updated.
+Regularly run dependency vulnerability checks.
+Keep backups of PostgreSQL and MinIO data.
+Future Improvements
+
+Possible future improvements include:
+
+Automated database backups.
+Automated MinIO backups.
+Production deployment.
+HTTPS configuration.
+Email notification improvements.
+Advanced admin reporting.
+Internship analytics dashboard.
+Automated certificate verification.
+Role-based administrative permissions.
+Improved audit logging.
+License
+
+This project is developed for internship/project purposes.
+
+## Author
+
+- **Name:** Naina Kharola
+- **College / Institution:** Graphic Era Hill University
+- **Project:** Web Portal – Student Internship Management System
