@@ -892,4 +892,5 @@ npm run dev
 5. Open the Application
 http://localhost:5173
 
-The application is now ready for local development and testing.
+The application is now ready for local development and testing.#   I n t e r n s h i p - M a n a g e m e n t - P o r t a l  
+ 
