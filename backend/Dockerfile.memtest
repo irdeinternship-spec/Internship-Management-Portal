@@ -1,0 +1,91 @@
+# Dockerfile.memtest
+#
+# Purpose-built image to answer one question: does Puppeteer/Chromium PDF
+# generation survive on a 512MB Render instance? It reproduces Render's
+# native Node runtime as closely as this can be pinned from the outside
+# (Render's Node environment is Debian-based; this pins the exact Debian
+# release rather than relying on a floating tag), runs the real
+# @sparticuz/chromium binary (not a proxy/local Chrome), and its only job is
+# to run scripts/pdfMemoryTest.js under a hard container memory cap.
+#
+# This is NOT the app's production Dockerfile (the app deploys via Render's
+# native Node runtime, not a container) -- it exists solely for this memory
+# test, run with `docker run --memory=512m --memory-swap=512m ...` (see the
+# command below) so there is no swap to hide an over-budget process behind.
+#
+# Base image: node:20-bookworm-slim, pinned explicitly (not the floating
+# `node:20-slim` tag) so the underlying Debian release -- and therefore the
+# exact apt package names below -- is known rather than assumed.
+FROM node:20-bookworm-slim
+
+# System libraries Chromium needs to actually launch on Debian/Ubuntu.
+# This list is Puppeteer's own documented "Debian (e.g. Ubuntu) Dependencies"
+# set (docs/troubleshooting.md, "Chrome doesn't launch on Linux") -- it is
+# the same underlying Chromium binary dependency surface regardless of who
+# repackaged the binary (@sparticuz/chromium vs. Puppeteer's own download),
+# so this is the correct authoritative source to check, not a guess.
+# @sparticuz/chromium's own README explicitly does not enumerate a Debian
+# apt list (its primary target is Lambda's Amazon Linux; its bundled
+# al2023.tar.br compatibility shim is only extracted when it detects it's
+# running ON Amazon Linux 2023, and is a no-op here on Debian).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libc6 \
+    libcairo2 \
+    libcups2 \
+    libdbus-1-3 \
+    libexpat1 \
+    libfontconfig1 \
+    libgbm1 \
+    libgcc1 \
+    libglib2.0-0 \
+    libgtk-3-0 \
+    libnspr4 \
+    libnss3 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libstdc++6 \
+    libx11-6 \
+    libx11-xcb1 \
+    libxcb1 \
+    libxcomposite1 \
+    libxcursor1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxi6 \
+    libxrandr2 \
+    libxrender1 \
+    libxss1 \
+    libxtst6 \
+    lsb-release \
+    wget \
+    xdg-utils \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install production dependencies only -- same command the real deploy uses.
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+# Only what scripts/pdfMemoryTest.js actually needs at runtime: the script
+# itself, the two services it requires (pdfService, templateService), and
+# the template/image assets templateService reads from disk. Nothing else
+# from the backend (no .env, no controllers/routes/db.js) is copied in.
+COPY services ./services
+COPY scripts ./scripts
+COPY templates ./templates
+
+# Deliberately NOT setting PUPPETEER_EXECUTABLE_PATH: leaving it unset means
+# pdfService.js falls through to @sparticuz/chromium's own bundled binary --
+# the actual thing that will run on Render -- rather than the local-Chrome
+# proxy path used for development-machine testing.
+ENV NODE_ENV=production
+
+CMD ["node", "scripts/pdfMemoryTest.js"]

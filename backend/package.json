@@ -4,7 +4,6 @@
   "description": "Express backend for the Student Registration Portal",
   "main": "server.js",
   "scripts": {
-    "postinstall": "npx puppeteer browsers install chrome",
     "start": "node server.js",
     "dev": "nodemon server.js",
     "db:init": "node -e \"require('dotenv').config(); require('./services/postgresSchema').ensurePostgresSchema().then(() => require('./db').end())\"",
@@ -17,6 +16,9 @@
   ],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1115.0",
     "archiver": "^8.0.0",
@@ -36,7 +38,7 @@
     "nodemailer": "^9.0.3",
     "papaparse": "^5.5.4",
     "pg": "^8.23.0",
-    "puppeteer": "^25.3.0",
+    "@sparticuz/chromium": "^143.0.4",
     "puppeteer-core": "^25.3.0"
   },
   "devDependencies": {

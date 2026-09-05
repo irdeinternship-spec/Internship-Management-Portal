@@ -1,0 +1,30 @@
+name: PDF memory test (throwaway)
+
+# One-off workflow to get a real x86_64 peak-RSS number for
+# backend/scripts/pdfMemoryTest.js running inside backend/Dockerfile.memtest
+# under a hard 512MB container memory cap (no swap) -- the same question
+# Dockerfile.memtest exists to answer for a Render deploy. GitHub's
+# ubuntu-latest runners are genuine x86_64 hardware, unlike this repo's
+# local dev machine (Apple Silicon), where the same container only runs
+# under QEMU emulation and Chromium crashes outright (a QEMU/JIT
+# incompatibility, not a memory or code problem). Manually triggered only;
+# safe to delete once the number is captured.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  memtest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build memtest image
+        run: docker build -f Dockerfile.memtest -t pdf-memtest:latest .
+        working-directory: backend
+
+      - name: Run under a hard 512MB cap (no swap)
+        run: |
+          docker run --rm \
+            --memory=512m --memory-swap=512m \
+            --name pdf-memtest-run \
+            pdf-memtest:latest

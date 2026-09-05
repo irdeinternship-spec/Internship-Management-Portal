@@ -9,21 +9,32 @@ const templatePath = path.join(
   "drdo_offer_letter.html"
 );
 
-const logoPath = path.join(__dirname, "..", "templates", "drdo_logo.png");
-const bannerPath = path.join(__dirname, "..", "templates", "ssa_banner.png");
-const swachhPath = path.join(__dirname, "..", "templates", "swachh_logo.png");
+// Optimized WebP versions, downscaled to the largest size these actually
+// render at in the template (135px/95px CSS width) sampled at 300 DPI print
+// quality, then re-encoded (see backend/templates/*-optimized.webp). This
+// replaced the original ~924KB/404KB PNGs, which were rendered at a tiny
+// fraction of their native 1024px resolution -- see git history for the
+// originals if a higher-resolution source is ever needed elsewhere.
+const logoPath = path.join(__dirname, "..", "templates", "drdo_logo-optimized.webp");
+const bannerPath = path.join(__dirname, "..", "templates", "ssa_banner-optimized.webp");
+const swachhPath = path.join(__dirname, "..", "templates", "swachh_logo-optimized.webp");
 
 // Convert images to Base64 so Puppeteer always renders them
 const logoBase64 = fs.existsSync(logoPath)
-  ? `data:image/png;base64,${fs.readFileSync(logoPath).toString("base64")}`
+  ? `data:image/webp;base64,${fs.readFileSync(logoPath).toString("base64")}`
   : "";
 
+// NOTE: bannerBase64 is computed but not currently referenced by any
+// {{placeholder}} in drdo_offer_letter.html -- the banner image is instead
+// baked directly into that template file as a literal base64 string (see
+// the optimization pass that replaced it). Kept here, pointed at the same
+// optimized asset, in case the template is ever changed to use {{bannerUrl}}.
 const bannerBase64 = fs.existsSync(bannerPath)
-  ? `data:image/png;base64,${fs.readFileSync(bannerPath).toString("base64")}`
+  ? `data:image/webp;base64,${fs.readFileSync(bannerPath).toString("base64")}`
   : "";
 
 const swachhBase64 = fs.existsSync(swachhPath)
-  ? `data:image/png;base64,${fs.readFileSync(swachhPath).toString("base64")}`
+  ? `data:image/webp;base64,${fs.readFileSync(swachhPath).toString("base64")}`
   : "";
 
 function escapeHtml(value) {
