@@ -1,6 +1,6 @@
 require("dotenv").config();
 
-const requiredEnv = ["JWT_SECRET", "DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD", "MAIN_ADMIN_EMAIL", "ENCRYPTION_KEY"];
+const requiredEnv = ["JWT_SECRET", "MONGODB_URI", "MAIN_ADMIN_EMAIL", "ENCRYPTION_KEY"];
 if (process.env.NODE_ENV === "production") {
   requiredEnv.push("CORS_ORIGINS", "MINIO_ENDPOINT", "MINIO_PORT", "MINIO_REGION", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY", "MINIO_BUCKET");
 }
@@ -26,32 +26,23 @@ const studentRoutes = require("./routes/studentRoutes");
 const collegeRoutes = require("./routes/collegeRoutes");
 const { protectFileAccess } = require("./middleware/fileAuth");
 const { getFileStream, verifyMinioConnection } = require("./services/s3StorageService");
-const { ensurePostgresSchema } = require("./services/postgresSchema");
+const { connectDB } = require("./config/mongo");
 
 const app = express();
 app.set("trust proxy", 1);
 const PORT = process.env.PORT || 5000;
 
-const pool = require("./db");
-
-pool.query("SELECT NOW()")
-  .then(async (result) => {
-    console.log("PostgreSQL test successful:");
-    console.log(result.rows[0]);
-    try {
-      await ensurePostgresSchema();
-      console.log("Creating database indexes if not exist...");
-      await pool.query("CREATE INDEX IF NOT EXISTS idx_students_email ON students ((student_data->>'email'))");
-      await pool.query("CREATE INDEX IF NOT EXISTS idx_students_status ON students ((student_data->>'status'))");
-      await pool.query("CREATE INDEX IF NOT EXISTS idx_students_referenceId ON students ((student_data->>'referenceId'))");
-      await pool.query("CREATE INDEX IF NOT EXISTS idx_admins_email ON admins ((admin_data->>'email'))");
-      console.log("✅ Database indexes ready");
-    } catch (err) {
-      console.error("❌ Database indexing failed:", err.message);
-    }
+// Index creation is handled by Mongoose itself: each schema's index:true/
+// unique:true declarations (models/mongo/*.js) are queued the moment those
+// files are require()'d and built automatically once connected (Mongoose's
+// default autoIndex behavior) - no manual CREATE INDEX step needed here,
+// unlike the Postgres setup this replaces.
+connectDB()
+  .then(() => {
+    console.log("✅ MongoDB connection successful");
   })
-  .catch(err => {
-    console.error("❌ PostgreSQL connection failed:", err);
+  .catch((err) => {
+    console.error("❌ MongoDB connection failed:", err);
     process.exit(1);
   });
 // ========================
