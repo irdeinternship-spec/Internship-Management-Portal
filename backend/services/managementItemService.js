@@ -1,105 +1,139 @@
-const fs = require("fs/promises");
-const path = require("path");
+// Re-points list/create/update/remove at the real Course/Branch/Duration
+// models instead of raw pool.query calls - one of the "bucket C" files
+// found during the step-4 survey.
+//
+// TODO(mongo-migration follow-up, still valid post-port): collegeService.js
+// duplicates this file's list/create/update/remove logic almost
+// line-for-line, just hardcoded to the College model instead of taking a
+// `type` param the way this file does for courses/branches/durations. Once
+// the migration is stable, collapse collegeService.js into this file (add
+// `colleges: College` to the `models` map and `Colleges: "College"` to
+// `labels` below) - same consolidation idea as before, just updated for the
+// model-based structure instead of the old entityFiles/SQL-table structure.
+//
+// Deliberately NOT porting the DELETE-all + re-INSERT pattern the original
+// save() used for every write (courses/branches/durations alike). A
+// Postgres transaction made that safe; without one, there's a real window
+// where the collection is empty and a concurrent request sees no
+// courses/branches/durations at all, and a crash mid-way loses the entire
+// list permanently. Checked every caller (managementController.js is a
+// thin pass-through of the 4 management routes) - none of them mean
+// "replace the whole list," each means exactly one row-level operation.
+// Replaced with targeted operations matching that: create = insert one
+// document, update = update one document by id, remove = delete one
+// document by id. (Contrast with collegeService.js's saveColleges(), where
+// whole-list replacement genuinely IS correct - that's only ever called
+// during a one-off bulk import nothing reads concurrently.)
+//
+// Also drops the JSON-file fallback branch entirely (the `fs`/`fileFor`/
+// `entityFiles` machinery) - checked, it was already 100% unreachable in
+// the original: modelFor's three real types (courses/branches/durations)
+// were always handled by the SQL branch above it, and fileFor() returns
+// null for anything else, including "colleges" - so `type` values besides
+// the three real ones already just threw "Invalid management item type."
+// immediately, matching what modelFor() below still does.
+//
+// Also drops the "if the DB query fails, fall back to hardcoded defaults"
+// behavior read() used to have for courses/branches/durations. That's the
+// same category of silent-failure-masking as postgresStore.js's old
+// readTable() (which the user explicitly had changed to propagate errors
+// instead) - flagging this as a deliberate, consistent extension of that
+// same decision, not something reinterpreted quietly: a broken DB
+// connection should now surface as a real error, not silently render as
+// "here are 4 hardcoded course names" with no indication anything is wrong.
 
-// TODO(mongo-migration follow-up): services/collegeService.js duplicates this
-// file's list/create/update/remove logic almost line-for-line, just hardcoded
-// to the `colleges` table/collection instead of taking a `type` param like
-// this file already does for courses/branches/durations. Once the Mongo
-// migration is stable, collapse collegeService.js into this generic
-// type-parameterized service (add "colleges" to entityFiles/labels below and
-// point it at the new College model). Deliberately NOT done as part of the
-// migration itself, so a broken reference lookup after cutover is
-// unambiguously the migration's fault, not a refactor's - see the
-// colleges/courses/branches modeling decision in the migration plan.
-const entityFiles = { courses: "courses.json", branches: "branches.json", durations: "durations.json" };
+const Course = require("../models/mongo/Course");
+const Branch = require("../models/mongo/Branch");
+const Duration = require("../models/mongo/Duration");
+
+const models = { courses: Course, branches: Branch, durations: Duration };
 const labels = { courses: "Course", branches: "Branch", durations: "Duration" };
-const defaults = {
-  courses: ["B.Tech", "M.Tech", "M.Sc", "PhD"],
-  branches: [
-    "Computer Science and Engineering",
-    "Information Technology",
-    "Electronics and Communication",
-    "Electrical Engineering",
-    "Mechanical Engineering",
-    "Civil Engineering",
-    "Aerospace Engineering",
-    "Artificial Intelligence and Data Science",
-  ],
-  durations: ["1 Week", "2 Weeks", "3 Weeks", "4 Weeks", "6 Weeks", "8 Weeks", "10 Weeks", "12 Weeks"],
-};
+
 const normalize = (name) => String(name || "").trim().replace(/\s+/g, " ");
 const failure = (message, statusCode) => Object.assign(new Error(message), { statusCode });
-const fileFor = (type) => entityFiles[type] ? path.join(__dirname, "..", "data", entityFiles[type]) : null;
-const durationParts = (name) => { const match = String(name || "").trim().match(/^(\d+(?:\.\d+)?)\s*(day|week|month)s?\b/i); const units = { day: 0, week: 1, month: 2 }; return match ? { unit: units[match[2].toLowerCase()], value: Number(match[1]) } : { unit: Infinity, value: Infinity }; };
-const compareDurations = (left, right) => { const a = durationParts(left.name); const b = durationParts(right.name); return a.unit - b.unit || a.value - b.value || left.name.localeCompare(right.name); };
 
-const pool = require("../db");
+const durationParts = (name) => {
+  const match = String(name || "").trim().match(/^(\d+(?:\.\d+)?)\s*(day|week|month)s?\b/i);
+  const units = { day: 0, week: 1, month: 2 };
+  return match ? { unit: units[match[2].toLowerCase()], value: Number(match[1]) } : { unit: Infinity, value: Infinity };
+};
+const compareDurations = (left, right) => {
+  const a = durationParts(left.name);
+  const b = durationParts(right.name);
+  return a.unit - b.unit || a.value - b.value || left.name.localeCompare(right.name);
+};
 
-async function read(type) {
-  if (type === "durations") {
-    try {
-      const res = await pool.query("SELECT data FROM durations");
-      const values = res.rows.map(row => row.data);
-      return Array.isArray(values) ? values : [];
-    } catch (error) {
-      return (defaults.durations || []).map((name, index) => ({ id: index + 1, name }));
-    }
-  }
+// Case-insensitive EXACT match via collation, matching the original's
+// LOWER(a) === LOWER(b) semantics without needing to escape regex
+// metacharacters in a course/branch/duration name.
+const CASE_INSENSITIVE = { locale: "en", strength: 2 };
 
-  if (type === "courses" || type === "branches") {
-    try {
-      const res = await pool.query(`SELECT id, name FROM ${type} ORDER BY name ASC`);
-      return res.rows;
-    } catch (error) {
-      return (defaults[type] || []).map((name, index) => ({ id: index + 1, name }));
-    }
-  }
-
-  const file = fileFor(type); if (!file) throw failure("Invalid management item type.", 404);
-  try { const values = JSON.parse(await fs.readFile(file, "utf8")); return Array.isArray(values) ? values : []; }
-  catch (error) { if (error.code === "ENOENT") return (defaults[type] || []).map((name, index) => ({ id: index + 1, name })); throw failure(`Unable to read ${labels[type].toLowerCase()} data.`, 500); }
+function modelFor(type) {
+  const model = models[type];
+  if (!model) throw failure("Invalid management item type.", 404);
+  return model;
 }
-async function save(type, values) {
-  if (type === "durations") {
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query("DELETE FROM durations");
-      for (const item of values) {
-        await client.query("INSERT INTO durations (data) VALUES ($1)", [item]);
-      }
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw failure("Failed to save durations to database.", 500);
-    } finally {
-      client.release();
-    }
-    return;
-  }
 
-  if (type === "courses" || type === "branches") {
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query(`DELETE FROM ${type}`);
-      for (const item of values) {
-        await client.query(`INSERT INTO ${type} (id, name) VALUES ($1, $2)`, [item.id, item.name]);
-      }
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw failure(`Failed to save ${type} to database.`, 500);
-    } finally {
-      client.release();
-    }
-    return;
-  }
-
-  const file = fileFor(type); await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, `${JSON.stringify(values, null, 2)}\n`, "utf8");
+function toApiShape(doc) {
+  return { id: doc._id, name: doc.name };
 }
-async function list(type) { return (await read(type)).sort(type === "durations" ? compareDurations : (a, b) => a.name.localeCompare(b.name)); }
-async function create(type, name) { const value = normalize(name), label = labels[type]; if (!value) throw failure(`${label} name is required.`, 400); const items = await read(type); if (items.some((item) => item.name.toLowerCase() === value.toLowerCase())) throw failure(`${label} already exists.`, 409); const item = { id: items.reduce((max, entry) => Math.max(max, entry.id || 0), 0) + 1, name: value }; await save(type, [...items, item]); return item; }
-async function update(type, id, name) { const value = normalize(name), label = labels[type], items = await read(type), index = items.findIndex((item) => item.id === Number(id)); if (!value) throw failure(`${label} name is required.`, 400); if (index < 0) throw failure(`${label} not found.`, 404); if (items.some((item) => item.id !== Number(id) && item.name.toLowerCase() === value.toLowerCase())) throw failure(`${label} already exists.`, 409); const item = { ...items[index], name: value }; items[index] = item; await save(type, items); return item; }
-async function remove(type, id) { const items = await read(type), item = items.find((entry) => entry.id === Number(id)); if (!item) throw failure(`${labels[type]} not found.`, 404); await save(type, items.filter((entry) => entry.id !== Number(id))); return item; }
+
+async function list(type) {
+  const model = modelFor(type);
+  const items = (await model.find({}).lean()).map(toApiShape);
+  return items.sort(type === "durations" ? compareDurations : (a, b) => a.name.localeCompare(b.name));
+}
+
+async function create(type, name) {
+  const model = modelFor(type);
+  const label = labels[type];
+  const value = normalize(name);
+  if (!value) throw failure(`${label} name is required.`, 400);
+
+  const existing = await model.findOne({ name: value }).collation(CASE_INSENSITIVE).lean();
+  if (existing) throw failure(`${label} already exists.`, 409);
+
+  // NOTE: computing the next id as (max existing _id) + 1 is racy under
+  // concurrency - carried over unchanged from the original version's
+  // identical race (it computed the same max+1 over the whole in-memory
+  // list before writing). Since _id is the primary key, the failure mode
+  // if two requests race is a loud duplicate-key error (E11000) on insert,
+  // not silent corruption - accepted as-is rather than fixed in this pass.
+  const highest = await model.findOne({}).sort({ _id: -1 }).lean();
+  const id = (highest ? highest._id : 0) + 1;
+
+  const created = await model.create({ _id: id, name: value });
+  return toApiShape(created);
+}
+
+async function update(type, id, name) {
+  const model = modelFor(type);
+  const label = labels[type];
+  const value = normalize(name);
+  const numericId = Number(id);
+  if (!value) throw failure(`${label} name is required.`, 400);
+
+  const existing = await model.findById(numericId);
+  if (!existing) throw failure(`${label} not found.`, 404);
+
+  const duplicate = await model.findOne({ name: value, _id: { $ne: numericId } }).collation(CASE_INSENSITIVE).lean();
+  if (duplicate) throw failure(`${label} already exists.`, 409);
+
+  existing.name = value;
+  await existing.save();
+  return toApiShape(existing);
+}
+
+async function remove(type, id) {
+  const model = modelFor(type);
+  const label = labels[type];
+  const numericId = Number(id);
+
+  const existing = await model.findById(numericId).lean();
+  if (!existing) throw failure(`${label} not found.`, 404);
+
+  await model.deleteOne({ _id: numericId });
+  return toApiShape(existing);
+}
+
 module.exports = { list, create, update, remove };
