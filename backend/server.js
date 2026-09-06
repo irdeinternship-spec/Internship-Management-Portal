@@ -1,8 +1,12 @@
 require("dotenv").config();
 
+// Storage (MinIO/S3) is deliberately NOT in this list, even in production:
+// it's an optional subsystem (R2 migration is a deferred phase) and must
+// never stop the app from booting. See the isStorageConfigured() check below
+// - upload/download routes respond 503 instead.
 const requiredEnv = ["JWT_SECRET", "MONGODB_URI", "MAIN_ADMIN_EMAIL", "ENCRYPTION_KEY"];
 if (process.env.NODE_ENV === "production") {
-  requiredEnv.push("CORS_ORIGINS", "MINIO_ENDPOINT", "MINIO_PORT", "MINIO_REGION", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY", "MINIO_BUCKET");
+  requiredEnv.push("CORS_ORIGINS");
 }
 if (process.env.EMAIL_ENABLED === "true") {
   requiredEnv.push("EMAIL_USER", "MAIL_FROM", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN");
@@ -25,12 +29,19 @@ const offerLetterRoutes = require("./routes/offerLetterRoutes");
 const studentRoutes = require("./routes/studentRoutes");
 const collegeRoutes = require("./routes/collegeRoutes");
 const { protectFileAccess } = require("./middleware/fileAuth");
-const { getFileStream, verifyMinioConnection } = require("./services/s3StorageService");
+const { getFileStream, verifyMinioConnection, isStorageConfigured, getMissingStorageEnv } = require("./services/s3StorageService");
 const { connectDB, disconnectDB } = require("./config/mongo");
 
 const app = express();
 app.set("trust proxy", 1);
 const PORT = process.env.PORT || 5000;
+
+if (!isStorageConfigured()) {
+  console.warn(
+    `⚠️  File storage is not configured (missing: ${getMissingStorageEnv().join(", ")}). ` +
+    "Upload/download routes will respond 503 until MinIO/S3 credentials are set."
+  );
+}
 
 // Index creation is handled by Mongoose itself: each schema's index:true/
 // unique:true declarations (models/mongo/*.js) are queued the moment those
@@ -141,6 +152,12 @@ app.use("/uploads", protectFileAccess, async (req, res, next) => {
     res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox;");
     stream.pipe(res);
   } catch (error) {
+    if (error.statusCode === 503) {
+      return res.status(503).json({
+        success: false,
+        message: error.message,
+      });
+    }
     next();
   }
 });
@@ -216,11 +233,13 @@ app.use((err, req, res, next) => {
 // ========================
 const server = app.listen(PORT, "0.0.0.0", async () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  try {
-    await verifyMinioConnection();
-  } catch (error) {
-    // Non-fatal warning at startup; it will fail on demand if bucket is needed
-    console.error("❌ MinIO startup check failed:", error.message);
+  if (isStorageConfigured()) {
+    try {
+      await verifyMinioConnection();
+    } catch (error) {
+      // Non-fatal warning at startup; it will fail on demand if bucket is needed
+      console.error("❌ MinIO startup check failed:", error.message);
+    }
   }
   try {
     const { checkChromiumPath } = require("./services/pdfService");

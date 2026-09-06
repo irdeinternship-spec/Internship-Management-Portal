@@ -74,9 +74,9 @@ function uploadOfferLetter(req, res, next) {
 
       next();
     } catch (err) {
-      return res.status(500).json({
+      return res.status(err.statusCode || 500).json({
         success: false,
-        message: "Offer Letter upload failed.",
+        message: err.statusCode === 503 ? err.message : "Offer Letter upload failed.",
       });
     }
   });

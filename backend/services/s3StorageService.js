@@ -1,7 +1,7 @@
 const { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadBucketCommand, CreateBucketCommand } = require("@aws-sdk/client-s3");
 const path = require("path");
 
-const endpoint = process.env.MINIO_USE_SSL === "true" 
+const endpoint = process.env.MINIO_USE_SSL === "true"
   ? `https://${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`
   : `http://${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`;
 
@@ -14,6 +14,31 @@ const s3Client = new S3Client({
   },
   forcePathStyle: true,
 });
+
+// Storage (MinIO today, R2 later) is an optional subsystem: production must
+// still boot without it configured, with upload/download routes responding
+// 503 instead of the app failing to start or a route 500ing on a raw AWS SDK
+// error. Every exported function below asserts configuration first.
+const STORAGE_ENV_KEYS = ["MINIO_ENDPOINT", "MINIO_PORT", "MINIO_REGION", "MINIO_ACCESS_KEY", "MINIO_SECRET_KEY", "MINIO_BUCKET"];
+
+function getMissingStorageEnv() {
+  return STORAGE_ENV_KEYS.filter((key) => !process.env[key]);
+}
+
+function isStorageConfigured() {
+  return getMissingStorageEnv().length === 0;
+}
+
+function assertStorageConfigured() {
+  const missing = getMissingStorageEnv();
+  if (missing.length > 0) {
+    const error = new Error(
+      `File storage is not configured (missing: ${missing.join(", ")}). Upload/download is temporarily unavailable.`
+    );
+    error.statusCode = 503;
+    throw error;
+  }
+}
 
 let bucketChecked = false;
 async function verifyMinioConnection() {
@@ -38,6 +63,7 @@ async function verifyMinioConnection() {
 }
 
 async function ensureBucketExists() {
+  assertStorageConfigured();
   if (bucketChecked) return;
   await verifyMinioConnection();
 }
@@ -90,5 +116,7 @@ module.exports = {
   uploadFile,
   getFileStream,
   deleteFile,
-  verifyMinioConnection
+  verifyMinioConnection,
+  isStorageConfigured,
+  getMissingStorageEnv,
 };

@@ -202,11 +202,11 @@ function uploadStudentDocuments(req, res, next) {
 
       req.uploadedFiles = uploadedFiles;
       next();
-    } 
+    }
     catch (err) {
-      return res.status(500).json({
+      return res.status(err.statusCode || 500).json({
         success: false,
-        message: "File upload failed.",
+        message: err.statusCode === 503 ? err.message : "File upload failed.",
         error: err.message,
       });
     }
@@ -270,9 +270,9 @@ function uploadCompletedDocuments(req, res, next) {
 
       next();
     } catch (err) {
-      return res.status(500).json({
+      return res.status(err.statusCode || 500).json({
         success: false,
-        message: "File upload failed.",
+        message: err.statusCode === 503 ? err.message : "File upload failed.",
         error: err.message,
       });
     }

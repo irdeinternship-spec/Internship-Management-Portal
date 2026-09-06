@@ -283,7 +283,7 @@ async function generateFinalPdf(req, res) {
     });
 
     return res
-      .status(500)
+      .status(error.statusCode || 500)
       .json({
         success: false,
         message: error.message || "Gyapan PDF generation failed.",
