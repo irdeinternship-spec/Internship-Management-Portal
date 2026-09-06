@@ -41,7 +41,6 @@
     "node-cron": "^4.6.0",
     "nodemailer": "^9.0.3",
     "papaparse": "^5.5.4",
-    "pg": "^8.23.0",
     "puppeteer-core": "^25.3.0"
   },
   "devDependencies": {
