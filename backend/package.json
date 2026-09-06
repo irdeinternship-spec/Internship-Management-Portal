@@ -9,6 +9,7 @@
     "db:init": "node -e \"require('dotenv').config(); require('./services/postgresSchema').ensurePostgresSchema().then(() => require('./db').end())\"",
     "db:import-colleges": "node scripts/importColleges.js",
     "seed": "node scripts/seed.js",
+    "test": "node --test \"tests/**/*.test.js\"",
     "smoke": "node scripts/smoke.js"
   },
   "keywords": [

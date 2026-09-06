@@ -1,196 +1,176 @@
-const pool = require("../db");
-const crypto = require("crypto");
-const { encrypt, decrypt } = require("../utils/encryption");
+// Backs the same createPostgresModel() surface every model file
+// (models/Admin.js, Student.js, Gyapan.js, ActivityLog.js, College.js) has
+// always called, but now returns real Mongoose models (models/mongo/*.js)
+// instead of the old in-memory-filter-over-Postgres-JSONB shim. The exported
+// surface is unchanged on purpose - createPostgresModel(fileName, defaults,
+// methods), same argument order, same return shape - so nothing importing
+// this file needs to change (that's step 4's job to verify, not this one's).
+//
+// See the migration-plan audit for the full list of Postgres-specific
+// behavior this used to encode and how each one was resolved; the short
+// version of what changed vs. a naive port:
+//
+//   - readTable() is gone entirely. There's no "fetch the whole table into
+//     JS and filter with Array.prototype" step anymore - every method below
+//     delegates straight to the real model's own find/findOne/etc, so
+//     filtering, sorting, and projection all happen server-side now. This
+//     works because the shim's own filter DSL (matches()/matchesCondition())
+//     was already written in real MongoDB query syntax ($or, $in, $ne,
+//     $exists, $regex, $gte/$lte/$gt/$lt) - it was never actually
+//     Postgres-specific, just interpreted by hand instead of by a real
+//     query engine.
+//   - Errors now propagate instead of being swallowed into an empty result
+//     (the old readTable() caught every error and returned []). A dropped
+//     Atlas connection now surfaces as a real error instead of "no
+//     students".
+//   - A malformed id (CastError) still degrades to "not found" (null / [] /
+//     0 / false / {deletedCount:0}) rather than reaching the client as a
+//     500 - handled in exactly one place here (safeQuery/catchCast below),
+//     not scattered across route handlers.
+//   - findByIdAndUpdate() deliberately does NOT delegate to the real
+//     model's native findOneAndUpdate. Two reasons, found while auditing
+//     this file line by line: (1) a plain update object with no $ operators
+//     is treated by the old shim as a partial merge (implicit $set), but
+//     native MongoDB update semantics without operators means a full
+//     document REPLACEMENT - every existing caller passing a plain object
+//     would have silently wiped the rest of the document. (2) the old shim
+//     calls .save() internally, which means it already fires beforeSave
+//     (bcrypt hashing, Student's encryption hooks) on every update - a
+//     native findOneAndUpdate would skip pre("save") entirely. So this one
+//     method keeps the original find -> merge -> save pattern, just backed
+//     by the real model instead of the in-memory one.
+//   - The old project()'s "+fieldname" projection syntax (which actually
+//     returned the ENTIRE record, not just the named extra field - a real
+//     bug) is gone. .select() now delegates to the real model's native
+//     select, which already has correct semantics (and Admin's
+//     password/secretAnswer/birthPlace/birthDate are now properly
+//     select:false at the schema level instead).
 
-const clone = (value) => value === undefined ? undefined : JSON.parse(JSON.stringify(value));
-const getValue = (object, key) => key.split(".").reduce((value, part) => value?.[part], object);
+const mongoose = require("mongoose");
 
-function matchesCondition(value, condition) {
-    if (condition && typeof condition === "object" && !Array.isArray(condition)) {
-        return Object.entries(condition).every(([operator, expected]) => {
-            if (operator === "$in") return expected.map(String).includes(String(value));
-            if (operator === "$ne") return String(value) !== String(expected);
-            if (operator === "$exists") return expected ? value !== undefined : value === undefined;
-            if (operator === "$regex") return new RegExp(expected, condition.$options || "").test(String(value || ""));
-            if (operator === "$options") return true;
-            if (operator === "$gte") return new Date(value).getTime() >= new Date(expected).getTime();
-            if (operator === "$lte") return new Date(value).getTime() <= new Date(expected).getTime();
-            if (operator === "$gt") return new Date(value).getTime() > new Date(expected).getTime();
-            if (operator === "$lt") return new Date(value).getTime() < new Date(expected).getTime();
-            return false;
-        });
-    }
-    return String(value) === String(condition);
-}
-
-function matches(record, filter = {}) {
-    return Object.entries(filter).every(([key, condition]) => {
-        if (key === "$or") return condition.some((entry) => matches(record, entry));
-        if (key === "$and") return condition.every((entry) => matches(record, entry));
-        return matchesCondition(getValue(record, key), condition);
-    });
-}
-
-function applyUpdate(record, update = {}) {
-    const next = { ...record, ...clone(update) };
-    delete next.$set;
-    Object.entries(update.$set || {}).forEach(([key, value]) => {
-        const parts = key.split("."); let target = next;
-        while (parts.length > 1) { const part = parts.shift(); target[part] ||= {}; target = target[part]; }
-        target[parts[0]] = value;
-    });
-    return next;
-}
-
-function project(record, projection) {
-    if (!projection) return record;
-    const tokens = String(projection).split(/\s+/).filter(Boolean);
-    const includeAll = tokens.some((token) => token.startsWith("+"));
-    const keys = tokens.map((key) => key.replace(/^\+/, ""));
-    if (includeAll) {
-        return { ...record };
-    }
-    const result = { _id: record._id };
-    keys.forEach((key) => { if (record[key] !== undefined) result[key] = record[key]; });
-    return result;
-}
-
-const mapping = {
-    "students.json": { table: "students", column: "student_data" },
-    "admins.json": { table: "admins", column: "admin_data" },
-    "gyapan.json": { table: "gyapan", column: "data" },
-    "activityLogs.json": { table: "activity_logs", column: "data" },
-    "durations.json": { table: "durations", column: "data" },
-    "colleges.json": { table: "colleges", column: "name" }
+const modelsByKey = {
+  "students.json": require("../models/mongo/Student"),
+  "admins.json": require("../models/mongo/Admin"),
+  "gyapan.json": require("../models/mongo/Gyapan"),
+  "activityLogs.json": require("../models/mongo/ActivityLog"),
+  // Neither of these two is actually reachable today - grepped the whole
+  // backend: nothing calls createPostgresModel("durations.json") anywhere,
+  // and models/College.js (the only thing that calls
+  // createPostgresModel("colleges.json")) is never require()'d by anything;
+  // both colleges and durations are read/written via raw SQL directly in
+  // collegeService.js/managementItemService.js instead. Mapped anyway so
+  // this file has no dead-end landmine if that ever changes.
+  "durations.json": require("../models/mongo/Duration"),
+  "colleges.json": require("../models/mongo/College"),
 };
 
-function encryptDocument(record, fileName) {
-    if (!record) return record;
-    const cloned = clone(record);
-    if (fileName === "students.json") {
-        if (cloned.aadhaarNumber) {
-            cloned.aadhaarNumber = encrypt(cloned.aadhaarNumber);
-        }
-        if (cloned.bankDetails && typeof cloned.bankDetails === "object") {
-            cloned.bankDetails = encrypt(JSON.stringify(cloned.bankDetails));
-        }
-    }
-    return cloned;
+function resolveModel(fileName) {
+  const model = modelsByKey[fileName];
+  if (!model) throw new Error("Unknown storage filename: " + fileName);
+  return model;
 }
 
-function decryptDocument(record, fileName) {
-    if (!record) return record;
-    const cloned = clone(record);
-    if (fileName === "students.json") {
-        if (cloned.aadhaarNumber) {
-            cloned.aadhaarNumber = decrypt(cloned.aadhaarNumber);
-        }
-        if (cloned.bankDetails) {
-            try {
-                const decryptedStr = decrypt(cloned.bankDetails);
-                cloned.bankDetails = JSON.parse(decryptedStr);
-            } catch (e) {
-                // If it starts with '{' but decryption didn't apply, try parsing direct
-                if (typeof cloned.bankDetails === "string" && cloned.bankDetails.trim().startsWith("{")) {
-                    try { cloned.bankDetails = JSON.parse(cloned.bankDetails); } catch (err) {}
-                }
-            }
-        }
-    }
-    return cloned;
+function isCastError(error) {
+  return Boolean(error) && (error instanceof mongoose.Error.CastError || error.name === "CastError");
 }
 
-async function readTable(fileName) {
-    const map = mapping[fileName];
-    if (!map) throw new Error("Unknown storage filename: " + fileName);
-    try {
-        const res = await pool.query(`SELECT ${map.column} FROM ${map.table}`);
-        return res.rows.map(row => decryptDocument(row[map.column], fileName));
-    } catch (error) {
-        console.error(`Error reading from table ${map.table}:`, error);
-        return [];
-    }
+// The ONE place a malformed id degrades to "not found" instead of a 500 -
+// see the file header. Wraps a real Mongoose Query so it stays fully
+// chainable (.select().sort().lean(), exactly like before) while converting
+// a CastError at execution time into the given "nothing matched" value.
+function safeQuery(realQuery, emptyValue) {
+  const wrapper = {
+    select(...args) {
+      realQuery = realQuery.select(...args);
+      return wrapper;
+    },
+    sort(...args) {
+      realQuery = realQuery.sort(...args);
+      return wrapper;
+    },
+    lean(...args) {
+      realQuery = realQuery.lean(...args);
+      return wrapper;
+    },
+    async exec() {
+      try {
+        return await realQuery.exec();
+      } catch (error) {
+        if (isCastError(error)) return emptyValue;
+        throw error;
+      }
+    },
+    then(resolve, reject) {
+      return wrapper.exec().then(resolve, reject);
+    },
+    catch(reject) {
+      return wrapper.exec().catch(reject);
+    },
+  };
+  return wrapper;
 }
 
-class PostgresQuery {
-    constructor(loader, Document) { this.loader = loader; this.Document = Document; this.projection = null; this.sortSpec = null; }
-    select(value) { this.projection = value; return this; }
-    sort(value) { this.sortSpec = value; return this; }
-    async records() {
-        const records = await this.loader();
-        if (this.sortSpec) {
-            const entries = Object.entries(this.sortSpec);
-            records.sort((a, b) => entries.reduce((result, [key, direction]) => {
-                if (result) return result; const left = getValue(a, key) ?? ""; const right = getValue(b, key) ?? "";
-                return (left > right ? 1 : left < right ? -1 : 0) * (direction === -1 ? -1 : 1);
-            }, 0));
-        }
-        return records.map((record) => project(record, this.projection));
-    }
-    lean() { return this.records(); }
-    then(resolve, reject) { return this.records().then(resolve, reject); }
+async function catchCast(promise, emptyValue) {
+  try {
+    return await promise;
+  } catch (error) {
+    if (isCastError(error)) return typeof emptyValue === "function" ? emptyValue() : emptyValue;
+    throw error;
+  }
 }
 
-function createPostgresModel(fileName, defaults = {}, methods = {}) {
-    class PostgresDocument {
-        constructor(data = {}) { Object.assign(this, clone({ ...defaults, ...data })); this._id ||= crypto.randomBytes(12).toString("hex"); }
-        toObject() { return clone(this); }
-        async save() {
-            if (methods.beforeSave) await methods.beforeSave(this);
-            const record = encryptDocument(this.toObject(), fileName);
-            const map = mapping[fileName];
-
-            const checkRes = await pool.query(
-                `SELECT id FROM ${map.table} WHERE ${map.column}->>'_id' = $1`,
-                [this._id]
-            );
-
-            if (checkRes.rows.length > 0) {
-                let updateQuery;
-                if (map.table === "students" || map.table === "admins") {
-                    updateQuery = `UPDATE ${map.table} SET ${map.column} = $1, updated_at = NOW() WHERE ${map.column}->>'_id' = $2`;
-                } else {
-                    updateQuery = `UPDATE ${map.table} SET ${map.column} = $1 WHERE ${map.column}->>'_id' = $2`;
-                }
-                await pool.query(updateQuery, [record, this._id]);
-            } else {
-                await pool.query(
-                    `INSERT INTO ${map.table} (${map.column}) VALUES ($1)`,
-                    [record]
-                );
-            }
-            return this;
-        }
+// Ported verbatim from the original shim (unchanged): a plain update object
+// merges its top-level keys onto the record; a $set with a dotted path
+// creates intermediate objects as needed. See the file header for why this
+// stays hand-rolled instead of delegating to a native update.
+function applyUpdate(record, update = {}) {
+  const next = { ...record, ...JSON.parse(JSON.stringify(update)) };
+  delete next.$set;
+  Object.entries(update.$set || {}).forEach(([key, value]) => {
+    const parts = key.split(".");
+    let target = next;
+    while (parts.length > 1) {
+      const part = parts.shift();
+      target[part] ||= {};
+      target = target[part];
     }
-    Object.assign(PostgresDocument.prototype, methods);
-    const Model = function Model(data) { return new PostgresDocument(data); };
-    const records = () => readTable(fileName);
-    Model.find = (filter = {}, projection) => new PostgresQuery(async () => (await records()).filter((record) => matches(record, filter)), PostgresDocument).select(projection);
-    Model.findOne = (filter = {}) => {
-        const query = new PostgresQuery(async () => (await records()).filter((item) => matches(item, filter)), PostgresDocument);
-        query.lean = async () => (await query.records())[0] || null;
-        query.then = (resolve, reject) => query.records().then((items) => resolve(items[0] ? new PostgresDocument(items[0]) : null), reject);
-        return query;
-    };
-    Model.findById = (id) => Model.findOne({ _id: id });
-    Model.create = async (data) => new PostgresDocument(data).save();
-    Model.exists = async (filter = {}) => Boolean((await records()).find((record) => matches(record, filter)));
-    Model.countDocuments = async (filter = {}) => (await records()).filter((record) => matches(record, filter)).length;
-    Model.findByIdAndUpdate = async (id, update) => { const document = await Model.findById(id); if (!document) return null; Object.assign(document, applyUpdate(document.toObject(), update)); return document.save(); };
-    Model.deleteMany = async (filter = {}) => {
-        const all = await records();
-        const matching = all.filter((record) => matches(record, filter));
-        const matchingIds = matching.map(r => r._id);
-        if (matchingIds.length > 0) {
-            const map = mapping[fileName];
-            await pool.query(
-                `DELETE FROM ${map.table} WHERE ${map.column}->>'_id' = ANY($1)`,
-                [matchingIds]
-            );
-        }
-        return { deletedCount: matching.length };
-    };
-    return Model;
+    target[parts[0]] = value;
+  });
+  return next;
+}
+
+function createPostgresModel(fileName, _defaults, _methods) {
+  // _defaults and _methods are intentionally unused: the real Mongoose
+  // model (models/mongo/*.js) is already a complete schema with its own
+  // defaults and its own instance methods (e.g. Admin's matchPassword,
+  // matchSecretAnswer are real schema methods now, not the object that used
+  // to be passed in here). Kept as parameters purely so models/Admin.js,
+  // Student.js, Gyapan.js, ActivityLog.js keep calling this the same way
+  // they always have - step 4 is where each of those gets verified, not
+  // this one.
+  const RealModel = resolveModel(fileName);
+
+  const Model = function Model(data) {
+    return new RealModel(data);
+  };
+
+  Model.find = (filter = {}, projection) => safeQuery(RealModel.find(filter, projection), []);
+  Model.findOne = (filter = {}) => safeQuery(RealModel.findOne(filter), null);
+  Model.findById = (id) => safeQuery(RealModel.findById(id), null);
+  Model.create = (data) => RealModel.create(data);
+  Model.exists = (filter = {}) => catchCast(RealModel.exists(filter), null);
+  Model.countDocuments = (filter = {}) => catchCast(RealModel.countDocuments(filter), 0);
+
+  Model.findByIdAndUpdate = async (id, update) => {
+    const document = await catchCast(RealModel.findById(id), null);
+    if (!document) return null;
+    Object.assign(document, applyUpdate(document.toObject(), update));
+    return document.save();
+  };
+
+  Model.deleteMany = (filter = {}) => catchCast(RealModel.deleteMany(filter), { deletedCount: 0 });
+
+  return Model;
 }
 
 module.exports = { createPostgresModel };

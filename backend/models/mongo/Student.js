@@ -28,7 +28,7 @@ const studentSchema = new Schema(
     email: { type: String, index: true }, // no unique constraint in Postgres, and not made unique here either - students can legitimately reapply
     dob: Date,
 
-    aadhaarNumber: String, // encrypted at rest, see pre-save/post-init hooks below
+    aadhaarNumber: String, // encrypted at rest, see the pre-save/post-query hooks below
     collegeName: { type: String, index: true },
     collegeAddress: { type: String, default: "" },
     collegeState: String,
@@ -196,11 +196,35 @@ studentSchema.pre("save", function encryptBeforeSave(next) {
   next();
 });
 
-// post-init fires after a document is hydrated from the DB (find/findOne),
-// mirroring decryptDocument() being applied to every record readTable()
-// returns today in postgresStore.js.
-studentSchema.post("init", function decryptAfterInit() {
-  decryptSensitiveFields(this);
+// BUG FOUND AND FIXED before this ever shipped: a `post("init")` hook (the
+// original design here) does NOT fire for .lean() queries -- .lean()
+// explicitly skips Mongoose's document-hydration machinery, which is what
+// "init" is part of. .lean() is used extensively for exactly the read paths
+// that show student data (the main admin student list, division-capacity
+// checks, the scheduled Excel export) -- every one of those would have
+// silently returned still-encrypted aadhaarNumber/bankDetails. Verified this
+// with a real .lean() query against seeded data before writing the fix; see
+// tests/decryption.test.js for the regression test.
+//
+// Fixed by hooking the query-level events instead, which fire with the
+// final result set regardless of whether it was lean()'d or hydrated into
+// full documents: "find" (arrays), "findOne" (single doc/null), and
+// "findOneAndUpdate" (single doc/null - also covers findByIdAndUpdate,
+// which Mongoose implements as a thin wrapper sharing the same hook).
+// decryptSensitiveFields() is idempotent (it type-checks before touching
+// each field), so this and encryptBeforeSave above can never double-apply
+// against each other by accident.
+function decryptQueryResult(result) {
+  if (!result) return;
+  if (Array.isArray(result)) {
+    result.forEach(decryptSensitiveFields);
+  } else {
+    decryptSensitiveFields(result);
+  }
+}
+
+studentSchema.post(["find", "findOne", "findOneAndUpdate"], function decryptAfterQuery(result) {
+  decryptQueryResult(result);
 });
 
 module.exports = mongoose.model("Student", studentSchema);
