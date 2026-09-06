@@ -1,6 +1,16 @@
 const fs = require("fs/promises");
 const path = require("path");
 
+// TODO(mongo-migration follow-up): services/collegeService.js duplicates this
+// file's list/create/update/remove logic almost line-for-line, just hardcoded
+// to the `colleges` table/collection instead of taking a `type` param like
+// this file already does for courses/branches/durations. Once the Mongo
+// migration is stable, collapse collegeService.js into this generic
+// type-parameterized service (add "colleges" to entityFiles/labels below and
+// point it at the new College model). Deliberately NOT done as part of the
+// migration itself, so a broken reference lookup after cutover is
+// unambiguously the migration's fault, not a refactor's - see the
+// colleges/courses/branches modeling decision in the migration plan.
 const entityFiles = { courses: "courses.json", branches: "branches.json", durations: "durations.json" };
 const labels = { courses: "Course", branches: "Branch", durations: "Duration" };
 const defaults = {
