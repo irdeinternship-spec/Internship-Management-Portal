@@ -415,11 +415,11 @@ async function loginStudent(req, res) {
     const token = jwt.sign(
       { id: student._id, role: "student" },
       process.env.JWT_SECRET,
-      { expiresIn: "1d" }
+      { expiresIn: process.env.JWT_EXPIRES_IN || "8h" }
     );
 
     res.cookie("token", token, getCookieOptions({
-      maxAge: 24 * 60 * 60 * 1000 // 1 day
+      maxAge: 8 * 60 * 60 * 1000 // 8 hours, matches JWT_EXPIRES_IN
     }));
 
     return res.status(200).json({

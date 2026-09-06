@@ -9,6 +9,8 @@ import {
   clearStudentSession,
   getStudentSession,
 } from "../services/studentSession";
+import { authHeader } from "../services/authSession";
+import { assertDownloadOk } from "../services/documentFileService";
 import { getUploadUrl } from "../utils/uploadUrl";
 import "../styles/admin.css";
 
@@ -34,13 +36,19 @@ function DetailGrid({ title, rows }) {
 }
 
 function FileLink({ label, href, download }) {
+  const [error, setError] = useState("");
+
   if (!href) return null;
 
   const handleClick = async (e) => {
     if (!download) return;
     e.preventDefault();
+    setError("");
     try {
-      const response = await fetch(getUploadUrl(href));
+      const response = await fetch(getUploadUrl(href), {
+        headers: authHeader("student"),
+      });
+      await assertDownloadOk(response, "student");
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -49,26 +57,29 @@ function FileLink({ label, href, download }) {
       link.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error("Download failed:", err);
+      setError(err.message || "Download failed.");
     }
   };
 
   return (
-    <a
-      className="student-document-link"
-      href={getUploadUrl(href)}
-      target={download ? undefined : "_blank"}
-      onClick={handleClick}
-      rel="noreferrer"
-    >
-      {label}
-    </a>
+    <>
+      <a
+        className="student-document-link"
+        href={getUploadUrl(href)}
+        target={download ? undefined : "_blank"}
+        onClick={handleClick}
+        rel="noreferrer"
+      >
+        {label}
+      </a>
+      {error && <span className="admin-error">{error}</span>}
+    </>
   );
 }
 
 function StudentDashboard() {
   const [student, setStudent] = useState(null);
-  const [credentials] = useState(getStudentSession());
+  const [token] = useState(getStudentSession());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [completedFile, setCompletedFile] = useState(null);
@@ -87,7 +98,7 @@ function StudentDashboard() {
   const [secondQuarterMessage, setSecondQuarterMessage] = useState("");
 
   useEffect(() => {
-    if (!credentials) {
+    if (!token) {
       window.history.replaceState({}, "", "/student/login");
       window.dispatchEvent(new PopStateEvent("popstate"));
       return;
@@ -97,7 +108,7 @@ function StudentDashboard() {
 
     async function loadDashboard() {
       try {
-        const response = await fetchStudentDashboard(credentials);
+        const response = await fetchStudentDashboard();
         if (!ignore) {
           setStudent(response.student);
           setProjectDetails(response.student.paidInternshipProjectDetails || {
@@ -119,7 +130,7 @@ function StudentDashboard() {
     return () => {
       ignore = true;
     };
-  }, [credentials]);
+  }, [token]);
 
   const logout = () => {
     clearStudentSession();
@@ -141,10 +152,7 @@ function StudentDashboard() {
     }
 
     try {
-      const response = await uploadCompletedDocuments(
-        credentials,
-        completedFile,
-      );
+      const response = await uploadCompletedDocuments(completedFile);
       setStudent(response.student);
       setUploadMessage(response.message);
     } catch (err) {
@@ -157,7 +165,7 @@ function StudentDashboard() {
     setSavingProjectDetails(true);
     setProjectDetailsMessage("");
     try {
-      const response = await savePaidInternshipProjectDetails(credentials, projectDetails);
+      const response = await savePaidInternshipProjectDetails(projectDetails);
       setStudent(response.student);
       setProjectDetails(response.student.paidInternshipProjectDetails);
       setProjectDetailsMessage(response.message);
@@ -183,7 +191,7 @@ function StudentDashboard() {
       return;
     }
     try {
-      const response = await savePaidInternshipProjectDetails(credentials, { bankDetails });
+      const response = await savePaidInternshipProjectDetails({ bankDetails });
       setStudent(response.student);
       setBankDetails(response.student.bankDetails || { bankName: "", savingAccountNumber: "", ifsc: "" });
       setBankDetailsMessage("Bank details saved successfully.");
@@ -223,7 +231,7 @@ function StudentDashboard() {
       }
     }
     try {
-      const response = await savePaidInternshipProjectDetails(credentials, { firstQuarterReport });
+      const response = await savePaidInternshipProjectDetails({ firstQuarterReport });
       setStudent(response.student);
       setFirstQuarterReport(response.student.firstQuarterReport || { fromDate: "", toDate: "", daysPresent: "" });
       setFirstQuarterMessage("First Quarter Report saved successfully.");
@@ -263,7 +271,7 @@ function StudentDashboard() {
       }
     }
     try {
-      const response = await savePaidInternshipProjectDetails(credentials, { secondQuarterReport });
+      const response = await savePaidInternshipProjectDetails({ secondQuarterReport });
       setStudent(response.student);
       setSecondQuarterReport(response.student.secondQuarterReport || { fromDate: "", toDate: "", daysPresent: "" });
       setSecondQuarterMessage("Second Quarter Report saved successfully.");
@@ -384,12 +392,12 @@ function StudentDashboard() {
             />
             <FileLink
               label="Download Declaration Form (Form 1)"
-              href={studentDocumentUrl("declaration", credentials)}
+              href={studentDocumentUrl("declaration")}
               download="Declaration-Form.pdf"
             />
             <FileLink
               label="Download Character Certificate (Form 2)"
-              href={studentDocumentUrl("character", credentials)}
+              href={studentDocumentUrl("character")}
               download="Character-Certificate.pdf"
             />
           </div>

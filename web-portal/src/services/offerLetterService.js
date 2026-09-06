@@ -1,17 +1,17 @@
-import { clearAdminToken, getAdminToken } from "./adminService";
+import { adminAuthHeader } from "./adminService";
+import { handleUnauthorized } from "./authSession";
 import { readDocumentResponse } from "./documentFileService";
 
 const API_URL = `${import.meta.env.VITE_API_URL || "/api"}/offer-letter`;
 
 function authHeaders() {
-  const token = getAdminToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return adminAuthHeader();
 }
 
 async function parseJsonResponse(response) {
   const body = await response.json().catch(() => ({}));
 
-  if (response.status === 401) clearAdminToken();
+  if (response.status === 401) handleUnauthorized("admin");
 
   if (!response.ok) {
     throw new Error(body.message || "Offer Letter request failed.");
@@ -57,7 +57,7 @@ export async function downloadOfferLetterPdf(studentId) {
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    if (response.status === 401) clearAdminToken();
+    if (response.status === 401) handleUnauthorized("admin");
     throw new Error(body.message || "Unable to download PDF.");
   }
   return readDocumentResponse(response);

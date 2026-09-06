@@ -15,7 +15,7 @@ function signToken(admin) {
   const role = (admin.email === mainAdminEmail || admin.role === "MAIN_ADMIN") ? "MAIN_ADMIN" : "SUB_ADMIN";
 
   return jwt.sign({ id: admin._id, role }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN || "1d",
+    expiresIn: process.env.JWT_EXPIRES_IN || "8h",
   });
 }
 
@@ -127,7 +127,7 @@ async function loginAdmin(req, res) {
     const token = signToken(admin);
 
     res.cookie("token", token, getCookieOptions({
-      maxAge: 24 * 60 * 60 * 1000 // 1 day
+      maxAge: 8 * 60 * 60 * 1000 // 8 hours, matches JWT_EXPIRES_IN
     }));
 
     return res.status(200).json({

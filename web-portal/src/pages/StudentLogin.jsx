@@ -28,10 +28,7 @@ function StudentLogin() {
         referenceId: form.referenceId.trim().toUpperCase(),
       };
       const response = await loginStudent(credentials);
-      setStudentSession({
-        ...credentials,
-        token: response.token,
-      });
+      setStudentSession(response.token);
       window.history.pushState({}, "", "/student/dashboard");
       window.dispatchEvent(new PopStateEvent("popstate"));
     } catch (err) {

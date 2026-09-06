@@ -1,36 +1,36 @@
 import { createDocumentUrl, readDocumentResponse } from "./documentFileService";
+import { authHeader, clearToken, getToken, handleUnauthorized, setToken } from "./authSession";
 
 const API_URL =
   `${import.meta.env.VITE_API_URL || "/api"}/admin`;
-const TOKEN_KEY = "webPortalAdminToken";
 
 export function getAdminToken() {
-  return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY);
+  return getToken("admin");
 }
 
 export function setAdminToken(token) {
-  sessionStorage.setItem(TOKEN_KEY, token);
-  localStorage.removeItem(TOKEN_KEY);
-  window.dispatchEvent(new Event("admin-auth-changed"));
+  setToken("admin", token);
 }
 
 export function clearAdminToken() {
-  sessionStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(TOKEN_KEY);
-  fetch(`${API_URL}/auth/logout`, { method: "POST" }).catch(() => {});
-  window.dispatchEvent(new Event("admin-auth-changed"));
+  clearToken("admin");
+}
+
+// Exported for the handful of page components that fetch /uploads/* files
+// directly (not through this service) and need to attach the same header.
+export function adminAuthHeader() {
+  return authHeader("admin");
 }
 
 function authHeaders() {
-  const token = getAdminToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return adminAuthHeader();
 }
 
 async function parseResponse(response) {
   const body = await response.json().catch(() => ({}));
 
   if (response.status === 401) {
-    clearAdminToken();
+    handleUnauthorized("admin");
   }
 
   if (!response.ok) {
@@ -103,6 +103,7 @@ export async function downloadAttendanceReportPdf(html) {
     body: JSON.stringify({ html }),
   });
   if (!response.ok) {
+    if (response.status === 401) handleUnauthorized("admin");
     const body = await response.json().catch(() => ({}));
     throw new Error(body.message || "Failed to generate PDF report.");
   }
@@ -176,7 +177,7 @@ export async function downloadCertificates(ids, endpoint = "certificates", rende
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    if (response.status === 401) clearAdminToken();
+    if (response.status === 401) handleUnauthorized("admin");
     const error = new Error(body.message || "Certificate download failed.");
     error.status = response.status;
     error.response = body;
@@ -355,6 +356,7 @@ export async function downloadUserActivityExport(id, format) {
     headers: authHeaders(),
   });
   if (!response.ok) {
+    if (response.status === 401) handleUnauthorized("admin");
     const body = await response.json().catch(() => ({}));
     throw new Error(body.message || "Export failed.");
   }
@@ -468,6 +470,7 @@ export async function exportApplicationsExcel() {
   });
 
   if (!response.ok) {
+    if (response.status === 401) handleUnauthorized("admin");
     const errorBody = await response.json().catch(() => ({}));
     throw new Error(errorBody.message || "Failed to download applications spreadsheet.");
   }

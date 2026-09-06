@@ -1,6 +1,11 @@
 import axios from "axios";
+import { authHeader, getToken, handleUnauthorized } from "./authSession";
 
 const API_URL = import.meta.env.VITE_API_URL || "/api";
+
+function studentAuthHeader() {
+  return authHeader("student");
+}
 
 // -------------------- Colleges --------------------
 
@@ -13,6 +18,10 @@ export async function fetchColleges() {
 
 async function parseResponse(response) {
   const body = await response.json().catch(() => ({}));
+
+  if (response.status === 401) {
+    handleUnauthorized("student");
+  }
 
   if (!response.ok || body.success === false) {
     throw new Error(body.message || "Student request failed.");
@@ -44,24 +53,25 @@ export async function loginStudent(credentials) {
   return parseResponse(response);
 }
 
-export async function fetchStudentDashboard(credentials) {
-  const response = await fetch(
-    `${API_URL}/students/dashboard`,
-    {
-      headers: {
-        "Authorization": `Bearer ${credentials.token}`,
-      }
-    }
-  );
+export async function fetchStudentDashboard() {
+  const response = await fetch(`${API_URL}/students/dashboard`, {
+    headers: studentAuthHeader(),
+  });
 
   return parseResponse(response);
 }
 
-export function studentDocumentUrl(type, credentials) {
-  return `${API_URL}/students/documents/${type}?token=${credentials.token}`;
+// TODO(storage-migration): this still appends ?token= to a plain download
+// link (declaration/character certificate). The backend's query-param token
+// path was intentionally removed (URL-borne tokens leak into access logs,
+// Referer headers, browser history), so this link is deliberately left
+// broken until R2 presigned GET URLs replace it - see the matching TODO on
+// getUploadUrl() in utils/uploadUrl.js for the other half of this decision.
+export function studentDocumentUrl(type) {
+  return `${API_URL}/students/documents/${type}?token=${getToken("student")}`;
 }
 
-export async function uploadCompletedDocuments(credentials, file) {
+export async function uploadCompletedDocuments(file) {
   const formData = new FormData();
   formData.append("completedDocuments", file);
 
@@ -69,9 +79,7 @@ export async function uploadCompletedDocuments(credentials, file) {
     `${API_URL}/students/completed-documents`,
     {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${credentials.token}`,
-      },
+      headers: studentAuthHeader(),
       body: formData,
     }
   );
@@ -79,12 +87,12 @@ export async function uploadCompletedDocuments(credentials, file) {
   return parseResponse(response);
 }
 
-export async function savePaidInternshipProjectDetails(credentials, details) {
+export async function savePaidInternshipProjectDetails(details) {
   const response = await fetch(`${API_URL}/students/paid-project-details`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${credentials.token}`,
+      ...studentAuthHeader(),
     },
     body: JSON.stringify(details),
   });

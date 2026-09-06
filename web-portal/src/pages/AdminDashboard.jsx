@@ -5,6 +5,7 @@ import SearchBar from "../components/Admin/SearchBar";
 import SortControls from "../components/Admin/SortControls";
 import StudentTable from "../components/Admin/StudentTable";
 import {
+  adminAuthHeader,
   clearAdminToken,
   deleteAdminStudents,
   downloadCertificates,
@@ -19,7 +20,7 @@ import {
 } from "../services/adminService";
 import { createGyapanPreview, generateGyapanPdf } from "../services/gyapanService";
 import { downloadOfferLetterPdf } from "../services/offerLetterService";
-import { printPdf } from "../services/documentFileService";
+import { assertDownloadOk, printPdf } from "../services/documentFileService";
 import { getUploadUrl } from "../utils/uploadUrl";
 import { useAdminAuth } from "../auth/useAdminAuth";
 import StudentForm from "../components/Form/StudentForm";
@@ -881,7 +882,8 @@ function AdminDashboard() {
     setDocumentBusy(true); setDocumentError("");
     try {
       const result = await generateGyapanPdf(item.gyapan._id);
-      const response = await fetch(getUploadUrl(result.pdfUrl));
+      const response = await fetch(getUploadUrl(result.pdfUrl), { headers: adminAuthHeader() });
+      await assertDownloadOk(response, "admin");
       const blob = await response.blob();
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);

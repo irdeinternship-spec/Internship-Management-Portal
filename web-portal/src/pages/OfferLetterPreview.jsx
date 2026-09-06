@@ -6,6 +6,8 @@ import {
   sendOfferLetter,
 } from "../services/offerLetterService";
 import { getUploadUrl } from "../utils/uploadUrl";
+import { adminAuthHeader } from "../services/adminService";
+import { assertDownloadOk } from "../services/documentFileService";
 import "../styles/admin.css";
 
 function OfferLetterPreview({ studentId }) {
@@ -79,7 +81,8 @@ function OfferLetterPreview({ studentId }) {
     setError("");
     setMessage("");
     try {
-      const response = await fetch(getUploadUrl(preview.pdfUrl));
+      const response = await fetch(getUploadUrl(preview.pdfUrl), { headers: adminAuthHeader() });
+      await assertDownloadOk(response, "admin");
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");

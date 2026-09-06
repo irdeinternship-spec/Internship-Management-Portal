@@ -9,8 +9,6 @@ async function protectFileAccess(req, res, next) {
       const authHeader = req.headers.authorization || "";
       if (authHeader.startsWith("Bearer ")) {
         token = authHeader.split(" ")[1];
-      } else if (req.query.token) {
-        token = req.query.token;
       }
     }
 
