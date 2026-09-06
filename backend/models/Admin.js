@@ -1,5 +1,5 @@
 const bcrypt = require("bcryptjs");
-const { createPostgresModel } = require("../services/postgresStore");
+const { createPostgresModel } = require("../services/mongoStore");
 
 module.exports = createPostgresModel("admins.json", {}, {
   async beforeSave(admin) {
