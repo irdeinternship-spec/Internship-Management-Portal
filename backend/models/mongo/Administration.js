@@ -125,11 +125,27 @@ administrationSchema.statics.saveAdministration = async function saveAdministrat
 
 // Ported from administrationService.js:83-121. The Postgres version wraps
 // the administration increment and the student's certificateNumber write in
-// one transaction with a `SELECT ... FOR UPDATE` row lock, so either both
-// happen or neither does. The Mongo-native equivalent atomicity guarantee is
-// a multi-document session transaction (Atlas clusters, including the free
-// M0 tier, are replica sets and support this) - not a redesign, the same
-// guarantee via the Mongo-native mechanism.
+// one transaction with a `SELECT ... FOR UPDATE` row lock on the
+// administration row.
+//
+// Re-examined what that lock actually protects, rather than defaulting to a
+// Mongo session/transaction as the "equivalent" mechanism (an earlier draft
+// of this function did exactly that, out of habit rather than because the
+// logic required it): the lock's only job is to stop two concurrent callers
+// from reading the same nextCertificateNumber and both computing the same
+// "next" value - i.e. the counter increment itself must be atomic. It does
+// NOT require the student write to be wrapped in the *same* transaction. If
+// the counter increment succeeds but the student write fails or crashes
+// afterward, the only consequence is one certificate number is permanently
+// skipped (the student still has no certificateNumber, so a retry just
+// allocates a fresh one) - a harmless gap, not a duplicate. Nothing else in
+// the app reads "which number belongs to which student" from the
+// administration side to even notice the gap.
+//
+// So: a single atomic findOneAndUpdate + $inc-equivalent on the counter is
+// sufficient for the one invariant that actually matters (no two students
+// ever receive the same number), followed by a plain, non-transactional
+// student write. No session, no transaction.
 administrationSchema.statics.reserveNextCertificateNumber = async function reserveNextCertificateNumber(studentId) {
   const Administration = this;
   // Deferred require to avoid a require-cycle between the two model files.
@@ -141,41 +157,36 @@ administrationSchema.statics.reserveNextCertificateNumber = async function reser
     return student.certificateNumber;
   }
 
-  const session = await mongoose.startSession();
-  try {
-    let assignedNum;
-    await session.withTransaction(async () => {
-      const admin = await Administration.findOneAndUpdate(
-        { _id: SINGLETON_ID },
-        [
-          {
-            $set: {
-              nextCertificateNumber: {
-                $cond: [
-                  { $and: [{ $gt: ["$nextCertificateNumber", 0] }, { $eq: [{ $type: "$nextCertificateNumber" }, "int"] }] },
-                  { $add: ["$nextCertificateNumber", 1] },
-                  101,
-                ],
-              },
-            },
+  // Atomic increment via an aggregation-pipeline update: MongoDB reads and
+  // bumps nextCertificateNumber as a single server-side operation, so two
+  // concurrent calls can never observe (and return) the same value - the
+  // same guarantee the FOR UPDATE lock gave, without a client-side
+  // transaction. { new: false } returns the pre-increment document, so
+  // `previous.nextCertificateNumber` is exactly the number to assign.
+  const previous = await Administration.findOneAndUpdate(
+    { _id: SINGLETON_ID },
+    [
+      {
+        $set: {
+          nextCertificateNumber: {
+            $cond: [
+              { $and: [{ $gt: ["$nextCertificateNumber", 0] }, { $eq: [{ $type: "$nextCertificateNumber" }, "int"] }] },
+              { $add: ["$nextCertificateNumber", 1] },
+              101,
+            ],
           },
-        ],
-        { new: false, session, upsert: true }
-      );
-      assignedNum = admin && Number.isInteger(admin.nextCertificateNumber) && admin.nextCertificateNumber > 0
-        ? admin.nextCertificateNumber
-        : 100;
+        },
+      },
+    ],
+    { new: false, upsert: true }
+  );
+  const assignedNum = previous && Number.isInteger(previous.nextCertificateNumber) && previous.nextCertificateNumber > 0
+    ? previous.nextCertificateNumber
+    : 100;
 
-      await Student.updateOne(
-        { _id: studentId },
-        { $set: { certificateNumber: assignedNum } },
-        { session }
-      );
-    });
-    return assignedNum;
-  } finally {
-    await session.endSession();
-  }
+  await Student.updateOne({ _id: studentId }, { $set: { certificateNumber: assignedNum } });
+
+  return assignedNum;
 };
 
 module.exports = mongoose.model("Administration", administrationSchema);
