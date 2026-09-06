@@ -1,8 +1,8 @@
 import { createDocumentUrl, readDocumentResponse } from "./documentFileService";
 import { authHeader, clearToken, getToken, handleUnauthorized, setToken } from "./authSession";
+import { API_URL as BASE_API_URL } from "../utils/apiUrl";
 
-const API_URL =
-  `${import.meta.env.VITE_API_URL || "/api"}/admin`;
+const API_URL = `${BASE_API_URL}/admin`;
 
 export function getAdminToken() {
   return getToken("admin");

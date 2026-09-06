@@ -4,7 +4,7 @@
 // Nothing outside this file should touch sessionStorage for a token, and no
 // service should build an `Authorization` header by hand.
 
-const API_URL = import.meta.env.VITE_API_URL || "/api";
+import { API_URL } from "../utils/apiUrl";
 
 const ROLES = {
   admin: {

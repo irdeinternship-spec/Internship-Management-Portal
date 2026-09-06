@@ -1,5 +1,6 @@
-const apiUrl = import.meta.env.VITE_API_URL || "/api";
-const backendUrl = apiUrl.replace(/\/api\/?$/, "").replace(/\/$/, "");
+import { API_URL } from "./apiUrl";
+
+const backendUrl = API_URL.replace(/\/api\/?$/, "").replace(/\/$/, "");
 
 // TODO(storage-migration): URLs from here are used both as plain <a href>/
 // <iframe src> navigation (can't attach an Authorization header - those

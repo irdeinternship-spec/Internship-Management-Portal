@@ -1,7 +1,8 @@
 import { adminAuthHeader } from "./adminService";
 import { handleUnauthorized } from "./authSession";
+import { API_URL } from "../utils/apiUrl";
 
-const API_BASE = `${import.meta.env.VITE_API_URL || "/api"}/admin`;
+const API_BASE = `${API_URL}/admin`;
 const headers = () => ({ ...adminAuthHeader(), "Content-Type": "application/json" });
 async function parse(response) { const body = await response.json().catch(() => ({})); if (response.status === 401) handleUnauthorized("admin"); if (!response.ok) throw new Error(body.message || "Gyapan request failed."); return body; }
 const apiUrl = (module = "gyapan") => `${API_BASE}/${module}`;

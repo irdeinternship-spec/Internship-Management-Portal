@@ -1,8 +1,9 @@
 import { adminAuthHeader } from "./adminService";
 import { handleUnauthorized } from "./authSession";
 import { readDocumentResponse } from "./documentFileService";
+import { API_URL as BASE_API_URL } from "../utils/apiUrl";
 
-const API_URL = `${import.meta.env.VITE_API_URL || "/api"}/offer-letter`;
+const API_URL = `${BASE_API_URL}/offer-letter`;
 
 function authHeaders() {
   return adminAuthHeader();

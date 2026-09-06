@@ -1,7 +1,6 @@
 import axios from "axios";
 import { authHeader, getToken, handleUnauthorized } from "./authSession";
-
-const API_URL = import.meta.env.VITE_API_URL || "/api";
+import { API_URL } from "../utils/apiUrl";
 
 function studentAuthHeader() {
   return authHeader("student");
