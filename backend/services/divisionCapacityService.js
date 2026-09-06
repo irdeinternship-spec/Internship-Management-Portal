@@ -1,8 +1,27 @@
 const { getAdministration } = require("./administrationService");
 
-// Local persistence is file based, so serialise allocation checks with the
-// corresponding save. This keeps a seat from being allocated twice when two
-// administrators submit at nearly the same time.
+// In-process lock, correct ONLY on a single instance - left as-is
+// deliberately, not fixed as part of the Mongo migration (see the
+// migration plan's step 5). It serializes the check-capacity-then-allocate
+// sequence within this one Node process, so two nearly-simultaneous
+// requests handled by the SAME process never both see a seat as free and
+// both take it.
+//
+// It provides NO protection across multiple instances: if this app is ever
+// scaled to more than one instance (a second Render dyno/instance, a second
+// container, etc.), each instance holds its own independent
+// `allocationLock` promise chain that knows nothing about the others. Two
+// requests landing on two different instances at the same moment can both
+// read the same division/branch as having exactly one seat left, both pass
+// the capacity check, and both allocate - overfilling that division/branch
+// past its configured seat limit, with no error and no indication anything
+// went wrong. Fixing this for real would need a DB-level lock (e.g. an
+// atomic conditional update on the Administration document, or a
+// short-lived lock document/session) instead of this in-memory Promise.
+//
+// Holds today because Render's free tier is single-instance - there is no
+// second process for this lock to fail to coordinate with. This stops being
+// true the moment horizontal scaling is turned on for this service.
 let allocationLock = Promise.resolve();
 
 function withDivisionAllocationLock(work) {
