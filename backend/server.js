@@ -26,7 +26,7 @@ const studentRoutes = require("./routes/studentRoutes");
 const collegeRoutes = require("./routes/collegeRoutes");
 const { protectFileAccess } = require("./middleware/fileAuth");
 const { getFileStream, verifyMinioConnection } = require("./services/s3StorageService");
-const { connectDB } = require("./config/mongo");
+const { connectDB, disconnectDB } = require("./config/mongo");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -80,17 +80,28 @@ const allowedOrigins = (process.env.CORS_ORIGINS || "")
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+// Any Vercel preview deployment (project-hash-team.vercel.app) is allowed in
+// addition to the explicit CORS_ORIGINS allowlist, since preview URLs are
+// generated per-branch/PR and can't be enumerated ahead of time.
+const vercelPreviewOrigin = /^https:\/\/[a-zA-Z0-9-]+\.vercel\.app$/;
+
 app.use(
   cors({
+    // Origin is echoed back per-request (never "*") because credentials:
+    // true requires a specific origin - the two can't be combined.
     origin: function (origin, callback) {
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) {
+      if (allowedOrigins.includes(origin) || vercelPreviewOrigin.test(origin)) {
         return callback(null, true);
       }
       return callback(new Error("Not allowed by CORS"));
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    // Authorization must be explicitly allowed: it's what makes our own
+    // requests preflighted, and without it here the OPTIONS preflight is
+    // rejected and the real GET/POST never fires.
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
@@ -155,15 +166,24 @@ app.use("/api/colleges", collegeRoutes);
 // ========================
 // Frontend Static & SPA Fallback
 // ========================
-const frontendDistPath = path.resolve(__dirname, process.env.FRONTEND_DIST_PATH || "../web-portal/dist");
-app.use(express.static(frontendDistPath));
+// Off by default - the frontend deploys separately to Vercel. Only needed
+// for a same-origin deployment shape or local end-to-end testing of a built
+// frontend served by this same process.
+if (process.env.SERVE_FRONTEND === "true") {
+  const frontendDistPath = path.resolve(__dirname, process.env.FRONTEND_DIST_PATH || "../web-portal/dist");
+  app.use(express.static(frontendDistPath));
 
-app.use((req, res, next) => {
-  if (req.method === "GET" && !req.path.startsWith("/api")) {
-    return res.sendFile(path.join(frontendDistPath, "index.html"));
-  }
-  next();
-});
+  app.use((req, res, next) => {
+    // Every /api/* route is already registered above and would have
+    // responded by now if matched - this guard just keeps an unmatched
+    // /api/* request falling through to the JSON 404 handler below instead
+    // of getting index.html back.
+    if (req.method === "GET" && !req.path.startsWith("/api")) {
+      return res.sendFile(path.join(frontendDistPath, "index.html"));
+    }
+    next();
+  });
+}
 
 // ========================
 // 404 Handler
@@ -194,7 +214,7 @@ app.use((err, req, res, next) => {
 // ========================
 // Start Server
 // ========================
-app.listen(PORT, async () => {
+const server = app.listen(PORT, "0.0.0.0", async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   try {
     await verifyMinioConnection();
@@ -216,3 +236,32 @@ app.listen(PORT, async () => {
     console.error("❌ Scheduled export init failed:", error.message);
   }
 });
+
+// ========================
+// Graceful Shutdown
+// ========================
+// Render sends SIGTERM on every deploy (and on scale-down). Without this,
+// in-flight requests get dropped mid-response instead of finishing, and the
+// Mongo connection is torn down uncleanly.
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  console.log(`${signal} received: closing server...`);
+  server.close(async (closeError) => {
+    if (closeError) {
+      console.error("Error while closing HTTP server:", closeError);
+    }
+    try {
+      await disconnectDB();
+      console.log("MongoDB connection closed.");
+    } catch (dbError) {
+      console.error("Error while closing MongoDB connection:", dbError);
+    }
+    process.exit(closeError ? 1 : 0);
+  });
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

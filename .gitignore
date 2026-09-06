@@ -15,6 +15,7 @@ backend/data/admins.json
 backend/data/students.json
 backend/data/gyapan.json
 backend/generated_offer_letter.html
+backend/exports/
 
 # Logs
 *.log
