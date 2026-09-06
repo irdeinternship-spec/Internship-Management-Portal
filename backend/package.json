@@ -7,7 +7,9 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "db:init": "node -e \"require('dotenv').config(); require('./services/postgresSchema').ensurePostgresSchema().then(() => require('./db').end())\"",
-    "db:import-colleges": "node scripts/importColleges.js"
+    "db:import-colleges": "node scripts/importColleges.js",
+    "seed": "node scripts/seed.js",
+    "smoke": "node scripts/smoke.js"
   },
   "keywords": [
     "express",

@@ -10,19 +10,17 @@ const { Schema } = mongoose;
 // that plain Number rather than ObjectId, same reasoning as
 // models/mongo/College.js.
 //
-// NOTE - deliberately NOT unique on `name`, unlike College/Course/Branch:
-// grepped services/postgresSchema.js and durations has no `UNIQUE`
-// constraint at all (colleges/courses/branches do). managementItemService.js
-// checks for a duplicate name in application code before insert for all
-// four types, but only three of them ever had that backed by a real DB
-// constraint. Following the "unique index wherever Postgres had a unique
-// constraint" rule literally means durations doesn't get one here either -
-// flagging this in case you'd rather close that gap too while we're here,
-// the same way referenceId/admin-email were.
+// UPDATE per sign-off: `unique: true` added on `name` even though Postgres
+// itself never enforced it here (unlike College/Course/Branch, which did).
+// Resolved in the permissive direction specifically because the database
+// starts empty on this migration - an empty collection can't have
+// duplicates, so there's zero migration risk, and this closes the same kind
+// of race managementItemService.js's app-level dedup check has always had
+// (identical in shape to the Student.referenceId / Admin.email fix).
 const durationSchema = new Schema(
   {
     _id: { type: Number },
-    name: { type: String, required: true },
+    name: { type: String, required: true, unique: true },
   },
   {
     timestamps: true,
