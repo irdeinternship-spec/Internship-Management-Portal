@@ -1,4 +1,5 @@
 const Student = require("../models/Student");
+const fs = require("fs/promises");
 const path = require("path");
 const jwt = require("jsonwebtoken");
 const { getCookieOptions } = require("../utils/cookieOptions");
