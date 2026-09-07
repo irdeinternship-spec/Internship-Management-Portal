@@ -1,0 +1,36 @@
+name: Backend CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  schema-audit:
+    name: Schema coverage audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: backend
+
+      # Statically scans every controller/service/middleware/route/script for
+      # assignments onto a Mongoose model and cross-references them against
+      # what models/mongo/*.js actually declares. See
+      # backend/scripts/auditSchemaCoverage.js's header for what this catches
+      # and its known limits - it exists specifically to close the gap
+      # strict:"throw" doesn't cover (a flat assignment to a wholly
+      # undeclared top-level field on an already-fetched document silently
+      # drops the data instead of throwing). Fails the run - not a warning -
+      # because the alternative is the same silent data loss this check was
+      # written after finding in production.
+      - name: Audit Mongoose schema coverage
+        run: npm run audit:schema
+        working-directory: backend
