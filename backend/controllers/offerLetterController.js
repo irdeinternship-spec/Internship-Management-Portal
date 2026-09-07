@@ -452,9 +452,17 @@ async function sendOfferLetter(req, res) {
     });
 
     try {
+      // Must be wrapped in $set: the mongoStore shim's applyUpdate() only
+      // walks dotted paths (like "offerLetter.status") when they're under
+      // $set - without it, "offerLetter.status" was being merged as a
+      // literal top-level key containing a dot, which Object.assign onto the
+      // document as an ad-hoc property that Mongoose's .save() never looks
+      // at. Silently did nothing, regardless of what the schema declares.
       await Student.findByIdAndUpdate(req.params.studentId, {
-        offerLetterStatus: "Email Failed",
-        "offerLetter.status": "Email Failed",
+        $set: {
+          offerLetterStatus: "Email Failed",
+          "offerLetter.status": "Email Failed",
+        },
       });
     } catch {
       // Preserve the original error response.

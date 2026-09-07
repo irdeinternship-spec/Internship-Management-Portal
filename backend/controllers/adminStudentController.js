@@ -307,8 +307,17 @@ async function getCertificateStudents(req, res) {
 async function removeCertificateBufferStudents(req, res) {
   const ids = Array.isArray(req.body.ids) ? req.body.ids : [];
   if (!ids.length) return res.status(400).json({ success: false, message: "Select at least one student to remove." });
-  await Promise.all(ids.map((id) => Student.findByIdAndUpdate(id, { certificateBufferRemoved: true })));
-  return res.json({ success: true, message: "Selected students removed from the certificate buffer." });
+  try {
+    await Promise.all(ids.map((id) => Student.findByIdAndUpdate(id, { certificateBufferRemoved: true })));
+    return res.json({ success: true, message: "Selected students removed from the certificate buffer." });
+  } catch (error) {
+    // This route had no try/catch at all until a real StrictModeError here
+    // (see mongoStore.js's findByIdAndUpdate) came back as an unhandled
+    // promise rejection and crashed the whole process instead of just
+    // failing this one request - Express 4 doesn't auto-catch a rejected
+    // async handler.
+    return res.status(error.statusCode || 500).json({ success: false, message: error.message || "Unable to update the certificate buffer." });
+  }
 }
 
 async function downloadCertificates(req, res) {
@@ -700,7 +709,17 @@ async function saveTrainingManagement(req, res) {
       }
     }
 
+    // Merge onto the existing subdocument rather than replacing it outright -
+    // student.trainingManagement = training below used to be a full replace,
+    // which silently wiped any field this function doesn't explicitly
+    // recompute (collegeAddress was the one that got lost; the next field
+    // anyone adds to trainingManagement without also adding it here would go
+    // the same way). Spreading the current value first means a field only
+    // ever gets lost if something deliberately overwrites it, not by omission.
+    const currentTraining = student.trainingManagement?.toObject?.() || student.trainingManagement || {};
+
     const training = {
+      ...currentTraining,
       studentName: req.body.studentName || student.name,
       courseName: req.body.courseName || student.course,
       courseYear: req.body.courseYear || student.year,

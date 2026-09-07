@@ -164,7 +164,21 @@ function createPostgresModel(fileName, _defaults, _methods) {
   Model.findByIdAndUpdate = async (id, update) => {
     const document = await catchCast(RealModel.findById(id), null);
     if (!document) return null;
-    Object.assign(document, applyUpdate(document.toObject(), update));
+    const merged = applyUpdate(document.toObject(), update);
+    // document.toObject() (used above as applyUpdate's merge base, so a
+    // dotted $set path correctly preserves its object's other existing
+    // fields) includes Mongoose-managed metadata - _id, createdAt, updatedAt,
+    // __v. Re-assigning those back onto the live document via Object.assign
+    // trips Mongoose's immutable-field guard under strict:"throw" (createdAt
+    // is immutable by default under timestamps:true) even though the value
+    // is unchanged - found running smoke right after that flag went on.
+    // None of the four are meant to be hand-copied like this anyway:
+    // updatedAt is bumped automatically by .save() itself.
+    delete merged._id;
+    delete merged.createdAt;
+    delete merged.updatedAt;
+    delete merged.__v;
+    Object.assign(document, merged);
     return document.save();
   };
 
