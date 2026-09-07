@@ -24,9 +24,31 @@
  */
 
 require("dotenv").config();
+const mongoose = require("mongoose");
+const Student = require("../models/mongo/Student");
+const Gyapan = require("../models/mongo/Gyapan");
+const Admin = require("../models/mongo/Admin");
 
 const PORT = process.env.PORT || 5000;
 const BASE = `http://localhost:${PORT}/api`;
+
+// A response body is what the server SAID it did - it's not proof anything
+// was actually persisted. This whole file was green while offerLetter.url
+// and completedDocuments silently failed to save for two document types
+// (see the migration-plan audit): the response echoed back the in-memory
+// object correctly every time, so nothing here ever noticed the database
+// never got written. assertPersisted() does a SEPARATE fresh read straight
+// from Mongo - not the HTTP response, not a variable carried over from the
+// write - and checks the field is actually there.
+async function assertPersisted(Model, id, getFieldFromFreshDoc, description) {
+  const fresh = await Model.findById(id).lean();
+  const value = getFieldFromFreshDoc(fresh);
+  expect(
+    value !== undefined && value !== null && value !== "",
+    `persistence check failed: ${description} - fresh read from Mongo shows ${JSON.stringify(value)}`
+  );
+  return value;
+}
 
 const results = [];
 let currentSection = "";
@@ -156,6 +178,11 @@ async function findSeededStudentId(referenceId) {
 }
 
 async function main() {
+  // Separate connection from the server's own - this script does its own
+  // independent reads for assertPersisted(), deliberately not trusting
+  // anything the app process itself reports.
+  await mongoose.connect(process.env.MONGODB_URI);
+
   // ======================================================================
   section("Public / unauthenticated");
   // ======================================================================
@@ -209,6 +236,12 @@ async function main() {
     expect(data.success === true, "expected success:true");
     expect(typeof data.referenceId === "string", "expected a referenceId");
     state.newStudentReferenceId = data.referenceId;
+
+    const fresh = await Student.findOne({ referenceId: data.referenceId }).lean();
+    expect(!!fresh, "persistence check failed: no student found in Mongo with this referenceId right after registration");
+    expect(!!fresh.resume?.url, `persistence check failed: resume.url missing from fresh read - got ${JSON.stringify(fresh.resume)}`);
+    expect(!!fresh.photo?.url, `persistence check failed: photo.url missing from fresh read - got ${JSON.stringify(fresh.photo)}`);
+    expect(!!fresh.aadhaarCard?.url, `persistence check failed: aadhaarCard.url missing from fresh read - got ${JSON.stringify(fresh.aadhaarCard)}`);
   }, (error) => /region is missing|minio|s3/i.test(error.message));
 
   await guardedTest("POST /students/login (newly registered student)", Boolean(state.newStudentReferenceId), async () => {
@@ -378,6 +411,7 @@ async function main() {
     });
     expect(status === 201, `expected 201, got ${status}: ${JSON.stringify(data)}`);
     subAdminId = data.user.id;
+    await assertPersisted(Admin, subAdminId, (a) => a.status, "status on a newly-created sub-admin");
   });
 
   await t("GET /admin/users", async () => {
@@ -522,6 +556,13 @@ async function main() {
   await t("PATCH /admin/administration/proforma", async () => {
     const { status } = await req("PATCH", "/admin/administration/proforma", { cookie: state.adminCookie, body: { proformaQuarterEnding: "March" } });
     expect(status === 200, `expected 200, got ${status}`);
+
+    // The entire proforma feature (5 fields) was undeclared on the
+    // Administration schema and had never persisted since the Mongo
+    // migration - this route returned 200 every time regardless.
+    const Administration = require("../models/mongo/Administration");
+    const fresh = await Administration.findOne({}).lean();
+    expect(fresh?.proformaQuarterEnding === "March", `persistence check failed: proformaQuarterEnding - fresh read shows ${JSON.stringify(fresh?.proformaQuarterEnding)}`);
   });
 
   // ======================================================================
@@ -583,6 +624,9 @@ async function main() {
     });
     expect(status === 200, `expected 200, got ${status}: ${JSON.stringify(data)}`);
     expect(data.student?.status === "Approved", "expected status to now be Approved");
+
+    await assertPersisted(Student, state.newStudentId, (s) => s.status, "status===Approved after review");
+    await assertPersisted(Student, state.newStudentId, (s) => s.remark, "remark set by the review");
   });
 
   await guardedTest("PATCH /admin/students/:id/training-management", Boolean(state.newStudentId), async () => {
@@ -603,6 +647,9 @@ async function main() {
       },
     });
     expect(status === 200, `expected 200, got ${status}: ${JSON.stringify(data)}`);
+
+    await assertPersisted(Student, state.newStudentId, (s) => s.trainingManagement?.division, "trainingManagement.division");
+    await assertPersisted(Student, state.newStudentId, (s) => s.trainingManagement?.trainingDuration, "trainingManagement.trainingDuration");
   });
 
   await guardedTest("PATCH /admin/students/:id (multipart edit, no new files)", Boolean(state.newStudentId), async () => {
@@ -646,6 +693,12 @@ async function main() {
     form.append("offerLetter", fileOf(PDF_BYTES, "application/pdf"), "offer.pdf");
     const { status, data } = await req("POST", `/offer-letter/${state.newStudentId}/upload`, { cookie: state.adminCookie, form });
     expect(status === 200, `expected 200, got ${status}: ${JSON.stringify(data)}`);
+
+    // This exact field (offerLetter.url) is what started the whole audit:
+    // the upload succeeded, the response carried a working pdfUrl, and the
+    // pointer still never reached the database.
+    await assertPersisted(Student, state.newStudentId, (s) => s.offerLetter?.url, "offerLetter.url after upload");
+    await assertPersisted(Student, state.newStudentId, (s) => s.offerLetterUrl, "legacy offerLetterUrl mirror after upload");
   });
 
   await guardedTest("POST /offer-letter/:studentId/send (needs EMAIL_ENABLED=true and MinIO/S3 configured)", Boolean(state.newStudentId), async () => {
@@ -655,6 +708,8 @@ async function main() {
       return;
     }
     expect(status === 200, `expected 200, got ${status}: ${JSON.stringify(data)}`);
+    await assertPersisted(Student, state.newStudentId, (s) => s.offerLetter?.sent, "offerLetter.sent after a successful send");
+    await assertPersisted(Student, state.newStudentId, (s) => s.offerLetterSentDate, "offerLetterSentDate after a successful send");
   });
 
   await guardedTest("POST /admin/students/:id/offer-letter (separate admin-side offer-letter file upload)", Boolean(state.newStudentId), async () => {
@@ -667,6 +722,7 @@ async function main() {
       return;
     }
     expect(status === 200, `expected 200, got ${status}`);
+    await assertPersisted(Student, state.newStudentId, (s) => s.offerLetterUrl, "offerLetterUrl after the admin-side upload");
   });
 
   // ======================================================================
@@ -711,6 +767,8 @@ async function main() {
       return;
     }
     expect(status === 200, `expected 200, got ${status}`);
+    await assertPersisted(Gyapan, state.gyapanId, (g) => g.pdfUrl, "Gyapan.pdfUrl after generate");
+    await assertPersisted(Gyapan, state.gyapanId, (g) => g.generatedDate, "Gyapan.generatedDate after generate");
   });
 
   await t("GET /admin/gyapan1/students (buffer-mode variant)", async () => {
@@ -786,6 +844,11 @@ async function main() {
     form.append("completedDocuments", fileOf(PDF_BYTES, "application/pdf"), "completed.pdf");
     const { status, data } = await req("POST", "/students/completed-documents", { cookie: state.studentCookie, form });
     expect(status === 200, `expected 200, got ${status}: ${JSON.stringify(data)}`);
+
+    // completedDocuments was entirely undeclared in the Student schema until
+    // this audit - this is the other field that started it (alongside
+    // offerLetter.url above).
+    await assertPersisted(Student, state.newStudentId, (s) => s.completedDocuments?.url, "completedDocuments.url after upload");
   });
 
   await guardedTest("PATCH /students/paid-project-details (expected 403 - smoke student is Unpaid)", Boolean(state.studentCookie), async () => {
@@ -825,10 +888,12 @@ async function main() {
   }
   console.log("==============================================================");
 
+  await mongoose.disconnect();
   process.exit(failed.length ? 1 : 0);
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
   console.error("Smoke test crashed:", error);
+  await mongoose.disconnect().catch(() => {});
   process.exit(1);
 });
