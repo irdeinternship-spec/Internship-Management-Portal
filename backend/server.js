@@ -17,6 +17,11 @@ if (missingEnv.length > 0) {
   process.exit(1);
 }
 
+// Must run before any model file is required (transitively, that's every
+// route/controller require below) - it registers a global mongoose.plugin()
+// that only takes effect on schemas compiled after registration.
+require("./config/mongoosePlugins");
+
 const path = require("path");
 const express = require("express");
 const cors = require("cors");
@@ -216,7 +221,15 @@ app.use((req, res) => {
 // Global Error Handler
 // ========================
 app.use((err, req, res, next) => {
-  if (process.env.NODE_ENV !== "production") {
+  // StrictModeError (an undeclared Mongoose schema field was assigned) is
+  // always logged, even in production - this is the exact class of error
+  // meant to be diagnosable from the Render log alone, and most controllers
+  // catch it locally and never reach this handler at all, so this branch is
+  // mostly a backstop (config/mongoosePlugins.js already logs at the throw
+  // site, which is where the vast majority of these are actually caught).
+  if (err.name === "StrictModeError") {
+    console.error(`❌ StrictModeError (reached global handler): ${err.message}`);
+  } else if (process.env.NODE_ENV !== "production") {
     console.error(err);
   }
 
@@ -278,3 +291,17 @@ function shutdown(signal) {
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
+
+// Last-resort net, not a substitute for fixing missing try/catch in route
+// handlers: an unhandled rejection inside an async Express handler (Express 4
+// doesn't auto-catch those) otherwise crashes the entire process by default
+// in modern Node - taking down every in-flight request, not just the one
+// that errored. Found this the hard way: a StrictModeError inside an
+// unguarded handler (adminStudentController.js's removeCertificateBufferStudents,
+// now fixed) killed the whole server mid-smoke-run. This just logs loudly
+// and keeps the process alive; the one bad request will hang/time out
+// instead of getting a clean response, which is still far better than every
+// other request going down with it.
+process.on("unhandledRejection", (reason) => {
+  console.error("❌ Unhandled promise rejection (a route handler is missing a try/catch):", reason);
+});
