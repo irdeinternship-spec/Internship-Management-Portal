@@ -17,6 +17,12 @@ const activityLogSchema = new Schema(
     action: String,
     description: String,
     status: String,
+    // Assigned by services/emailService.js's logEmailActivity (the
+    // disabled-email logging path) but never declared - silently dropped on
+    // every one of those log entries.
+    recipient: String,
+    subject: String,
+    templateName: String,
     // queried/sorted at controllers/adminAuthController.js:477,497
     // (ActivityLog.find({ userId }).sort({ timestamp: -1 })) - kept as its
     // own field separate from createdAt since the app sets/reads it
@@ -25,6 +31,7 @@ const activityLogSchema = new Schema(
   },
   {
     timestamps: true,
+    strict: "throw",
     toJSON: {
       transform(_doc, ret) {
         ret.id = ret._id;

@@ -41,9 +41,23 @@ const administrationSchema = new Schema(
     // shape exactly) - Map is the Mongoose type for an arbitrary-key nested
     // object like this, rather than a fixed set of schema paths.
     divisionConfigurations: { type: Map, of: divisionConfigurationSchema, default: {} },
+
+    // Proforma/attendance report config, assigned by
+    // controllers/administrationController.js's saveProformaConfig but never
+    // declared here - PATCH /admin/administration/proforma has never
+    // persisted anything since the Mongo migration; every save silently
+    // no-opped. proformaSection1/proformas are Mixed because nothing in the
+    // codebase reads their shape back (confirmed by grep) - there's no real
+    // contract to type precisely, same reasoning as Student.bankDetails.
+    proformaSelectedPeriod: String,
+    attendanceSelectedPeriod: String,
+    proformaQuarterEnding: String,
+    proformaSection1: Schema.Types.Mixed,
+    proformas: Schema.Types.Mixed,
   },
   {
     timestamps: true,
+    strict: "throw",
     toJSON: {
       transform(_doc, ret) {
         ret.id = ret._id;
@@ -115,11 +129,24 @@ administrationSchema.statics.getAdministration = async function getAdministratio
 administrationSchema.statics.saveAdministration = async function saveAdministration(configuration) {
   const Administration = this;
   configuration.divisions = [...configuration.divisions].sort((left, right) => left.localeCompare(right));
-  await Administration.findOneAndUpdate(
-    { _id: SINGLETON_ID },
-    { $set: configuration },
-    { upsert: true }
-  );
+  try {
+    await Administration.findOneAndUpdate(
+      { _id: SINGLETON_ID },
+      { $set: configuration },
+      { upsert: true }
+    );
+  } catch (error) {
+    // This is a query-level update (findOneAndUpdate + $set), not a document
+    // instance mutation - config/mongoosePlugins.js's $set-override plugin
+    // only covers the latter, so this one call site needs its own
+    // model-name enrichment + logging.
+    if (error.name === "StrictModeError") {
+      error.modelName = "Administration";
+      error.message = `[Administration] ${error.message}`;
+      console.error(`❌ StrictModeError: ${error.message}`);
+    }
+    throw error;
+  }
   return configuration;
 };
 

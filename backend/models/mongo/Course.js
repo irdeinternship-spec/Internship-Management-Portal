@@ -12,6 +12,7 @@ const courseSchema = new Schema(
   },
   {
     timestamps: true,
+    strict: "throw",
     toJSON: {
       transform(_doc, ret) {
         ret.id = ret._id;

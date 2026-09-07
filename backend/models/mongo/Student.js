@@ -53,6 +53,15 @@ const studentSchema = new Schema(
     photo: FileRefSchema,
     permissionLetter: FileRefSchema,
     aadhaarCard: { type: FileRefSchema, default: null },
+    // completedDocuments was assigned by studentController.js's
+    // uploadCompletedStudentDocuments (as {url, publicId, uploadedAt}) but was
+    // never declared here - under strict mode Mongoose silently dropped every
+    // upload. Reuses FileRefSchema's {url, publicId} shape plus a timestamp.
+    completedDocuments: {
+      url: String,
+      publicId: String,
+      uploadedAt: Date,
+    },
 
     submittedAt: { type: Date, index: true },
     status: { type: String, default: "Pending", index: true },
@@ -65,6 +74,18 @@ const studentSchema = new Schema(
     reviewedAt: Date,
     approvedDate: { type: Date, index: true },
     recommendedBy: String,
+    // remark/referenceBy: assigned by adminStudentController.js's
+    // reviewFields loop (["status", "remark", "referenceBy", "recommendedBy"])
+    // but never declared - silently dropped under strict mode.
+    remark: String,
+    referenceBy: String,
+
+    // joinedStatus/joinedDate/completedDate: top-level mirrors of
+    // trainingManagement.joined/joinedDate/completed set by
+    // adminStudentController.js's saveTrainingManagement, never declared.
+    joinedStatus: String,
+    joinedDate: Date,
+    completedDate: Date,
 
     trainingManagement: {
       studentName: String,
@@ -78,6 +99,18 @@ const studentSchema = new Schema(
       division: { type: String, index: true },
       fromDate: { type: Date, index: true },
       toDate: { type: Date, index: true },
+      // Everything below was assigned by saveTrainingManagement but never
+      // declared - silently dropped on every save until this fix.
+      joined: String,
+      joinedDate: Date,
+      projectTitle: String,
+      projectGuide: String,
+      designation: String,
+      leaveAvailed: String,
+      completed: String,
+      completionDate: Date,
+      updatedBy: String,
+      updatedAt: Date,
     },
 
     offerLetter: {
@@ -91,7 +124,30 @@ const studentSchema = new Schema(
       collegeAddress: String,
       issueDate: Date,
       letterNumber: String,
+      // Everything below was assigned by offerLetterController.js but never
+      // declared - silently dropped on every save until this fix. This is
+      // the field (`url`) that made this whole audit start: an offer letter
+      // could be uploaded successfully to R2 and the response would show a
+      // working pdfUrl, but the pointer never reached the database.
+      generatedBy: String,
+      uploadType: String,
+      status: String,
+      html: String,
+      sent: Boolean,
+      edited: Boolean,
+      url: String,
+      publicId: String,
+      sentAt: Date,
     },
+
+    // Legacy top-level mirrors of offerLetter.* kept in sync by
+    // syncLegacyOfferLetterFields() - also never declared, also silently
+    // dropped.
+    offerLetterUrl: String,
+    offerLetterPublicId: String,
+    offerLetterUploadedDate: Date,
+    offerLetterSentDate: Date,
+    offerLetterSentBy: String,
 
     // These fields are deliberately separate from training management so only
     // the approved paid-internship student can maintain their project details
@@ -136,6 +192,12 @@ const studentSchema = new Schema(
     // + `{ timestamps: false }` on that one insert, or a direct collection
     // insertMany bypassing hooks) rather than letting Mongoose regenerate them.
     timestamps: true,
+    // "throw" instead of the default `true`: an assignment to an undeclared
+    // path now throws a StrictModeError instead of being silently dropped.
+    // This is the guardrail against the exact bug class this file's history
+    // just went through - see the migration-plan audit. Every field any
+    // controller actually assigns must be declared above.
+    strict: "throw",
     toJSON: {
       transform(_doc, ret) {
         ret.id = ret._id;

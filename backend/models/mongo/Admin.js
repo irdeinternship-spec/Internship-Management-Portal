@@ -38,6 +38,9 @@ const adminSchema = new Schema(
     // the narrower, presumably-intended behavior for free.
     password: { type: String, select: false },
     role: { type: String, enum: ["MAIN_ADMIN", "SUB_ADMIN"] },
+    // Assigned by adminAuthController.js's createSubUser (Admin.create({...,
+    // status: "Active"})) but never declared - silently dropped on create.
+    status: { type: String, default: "Active" },
 
     secretQuestion: String,
     secretAnswer: { type: String, select: false },
@@ -56,6 +59,7 @@ const adminSchema = new Schema(
   },
   {
     timestamps: true,
+    strict: "throw",
     toJSON: {
       transform(_doc, ret) {
         ret.id = ret._id;

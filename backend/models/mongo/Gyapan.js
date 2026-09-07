@@ -29,6 +29,10 @@ const gyapanSchema = new Schema(
     issueDate: Date,
     generated: { type: Boolean, default: false },
     generatedBy: { type: String, default: "" },
+    // Assigned by controllers/gyapanController.js alongside generated/
+    // generatedBy/pdfUrl/gyapanUrl/publicId but never declared here - silently
+    // dropped on every save until this fix.
+    generatedDate: Date,
     pdfUrl: { type: String, default: "" },
     gyapanUrl: { type: String, default: "" },
     publicId: { type: String, default: "" },
@@ -42,6 +46,7 @@ const gyapanSchema = new Schema(
   },
   {
     timestamps: true,
+    strict: "throw",
     toJSON: {
       transform(_doc, ret) {
         ret.id = ret._id;

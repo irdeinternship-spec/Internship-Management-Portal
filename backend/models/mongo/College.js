@@ -23,6 +23,7 @@ const collegeSchema = new Schema(
     // default auto-generated ObjectId with a plain Number instead, while
     // still keeping a real, present _id path.
     timestamps: true,
+    strict: "throw",
     toJSON: {
       transform(_doc, ret) {
         ret.id = ret._id;
