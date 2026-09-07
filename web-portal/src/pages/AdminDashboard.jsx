@@ -5,7 +5,6 @@ import SearchBar from "../components/Admin/SearchBar";
 import SortControls from "../components/Admin/SortControls";
 import StudentTable from "../components/Admin/StudentTable";
 import {
-  adminAuthHeader,
   clearAdminToken,
   deleteAdminStudents,
   downloadCertificates,
@@ -20,8 +19,8 @@ import {
 } from "../services/adminService";
 import { createGyapanPreview, generateGyapanPdf } from "../services/gyapanService";
 import { downloadOfferLetterPdf } from "../services/offerLetterService";
-import { assertDownloadOk, printPdf } from "../services/documentFileService";
-import { getUploadUrl } from "../utils/uploadUrl";
+import { readDocumentResponse, printPdf } from "../services/documentFileService";
+import { getPresignedFileUrl } from "../utils/presignedFile";
 import { useAdminAuth } from "../auth/useAdminAuth";
 import StudentForm from "../components/Form/StudentForm";
 import StudentDetails from "./StudentDetails";
@@ -882,9 +881,9 @@ function AdminDashboard() {
     setDocumentBusy(true); setDocumentError("");
     try {
       const result = await generateGyapanPdf(item.gyapan._id);
-      const response = await fetch(getUploadUrl(result.pdfUrl), { headers: adminAuthHeader() });
-      await assertDownloadOk(response, "admin");
-      const blob = await response.blob();
+      const presignedUrl = await getPresignedFileUrl(result.pdfUrl, "admin");
+      const response = await fetch(presignedUrl);
+      const blob = await readDocumentResponse(response);
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
       const firstStudentId = item.gyapan.selectedStudents?.[0];

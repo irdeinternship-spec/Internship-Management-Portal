@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { fetchAdminStudent } from "../services/adminService";
-import { getUploadUrl } from "../utils/uploadUrl";
+import { usePresignAndOpen } from "../utils/presignedFile";
 import "../styles/admin.css";
 
 function formatDate(value) {
@@ -47,11 +47,15 @@ function DetailGrid({ title, rows }) {
 }
 
 function DocumentButton({ label, file }) {
+  const { open, busy, error } = usePresignAndOpen("admin");
   if (!file?.url) return null;
   return (
-    <a className="admin-secondary-btn admin-link-button" href={getUploadUrl(file.url)} target="_blank" rel="noreferrer">
-      View {label}
-    </a>
+    <>
+      <button type="button" className="admin-secondary-btn admin-link-button" onClick={() => open(file.url)} disabled={busy}>
+        {busy ? "Opening…" : `View ${label}`}
+      </button>
+      {error && <span className="admin-error">{error}</span>}
+    </>
   );
 }
 

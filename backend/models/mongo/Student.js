@@ -4,7 +4,11 @@ const { encrypt, decrypt } = require("../../utils/encryption");
 const { Schema } = mongoose;
 
 const FileRefSchema = new Schema(
-  { url: String, publicId: String },
+  // url is indexed: the Phase B presign endpoint looks up "which student owns
+  // this file" by an exact-equality match on this field on every request
+  // (see middleware/fileAuth.js's authorizeFileKey) - it's a hot path now,
+  // not just an occasional admin lookup.
+  { url: { type: String, index: true }, publicId: String },
   { _id: false }
 );
 
@@ -58,7 +62,7 @@ const studentSchema = new Schema(
     // never declared here - under strict mode Mongoose silently dropped every
     // upload. Reuses FileRefSchema's {url, publicId} shape plus a timestamp.
     completedDocuments: {
-      url: String,
+      url: { type: String, index: true },
       publicId: String,
       uploadedAt: Date,
     },
@@ -135,7 +139,9 @@ const studentSchema = new Schema(
       html: String,
       sent: Boolean,
       edited: Boolean,
-      url: String,
+      // Indexed for the same reason as FileRefSchema.url above - the Phase B
+      // presign endpoint's ownership lookup queries this field directly.
+      url: { type: String, index: true },
       publicId: String,
       sentAt: Date,
     },
@@ -143,7 +149,7 @@ const studentSchema = new Schema(
     // Legacy top-level mirrors of offerLetter.* kept in sync by
     // syncLegacyOfferLetterFields() - also never declared, also silently
     // dropped.
-    offerLetterUrl: String,
+    offerLetterUrl: { type: String, index: true },
     offerLetterPublicId: String,
     offerLetterUploadedDate: Date,
     offerLetterSentDate: Date,

@@ -5,9 +5,8 @@ import {
   getOfferLetter,
   sendOfferLetter,
 } from "../services/offerLetterService";
-import { getUploadUrl } from "../utils/uploadUrl";
-import { adminAuthHeader } from "../services/adminService";
-import { assertDownloadOk } from "../services/documentFileService";
+import { getPresignedFileUrl } from "../utils/presignedFile";
+import { readDocumentResponse } from "../services/documentFileService";
 import "../styles/admin.css";
 
 function OfferLetterPreview({ studentId }) {
@@ -81,9 +80,9 @@ function OfferLetterPreview({ studentId }) {
     setError("");
     setMessage("");
     try {
-      const response = await fetch(getUploadUrl(preview.pdfUrl), { headers: adminAuthHeader() });
-      await assertDownloadOk(response, "admin");
-      const blob = await response.blob();
+      const presignedUrl = await getPresignedFileUrl(preview.pdfUrl, "admin");
+      const response = await fetch(presignedUrl);
+      const blob = await readDocumentResponse(response);
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;

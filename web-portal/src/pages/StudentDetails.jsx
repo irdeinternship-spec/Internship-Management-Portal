@@ -15,7 +15,7 @@ import {
   generateOfferLetter,
   uploadOfferLetterPdf,
 } from "../services/offerLetterService";
-import { getUploadUrl } from "../utils/uploadUrl";
+import { usePresignAndOpen } from "../utils/presignedFile";
 import { branches as registeredBranchOptions } from "../data/branches";
 import { internshipDurations } from "../data/internshipDurations";
 import { sortDurations } from "../utils/durationSort";
@@ -90,12 +90,38 @@ function DetailGrid({ title, rows }) {
 }
 
 function DocumentButton({ label, file }) {
+  const { open, busy, error } = usePresignAndOpen("admin");
   if (!file?.url) return null;
 
   return (
-    <a className="admin-secondary-btn admin-link-button" href={getUploadUrl(file.url)} target="_blank" rel="noreferrer">
-      View {label}
-    </a>
+    <>
+      <button type="button" className="admin-secondary-btn admin-link-button" onClick={() => open(file.url)} disabled={busy}>
+        {busy ? "Opening…" : `View ${label}`}
+      </button>
+      {error && <span className="admin-error">{error}</span>}
+    </>
+  );
+}
+
+// Small "current file" preview link shown next to an edit-mode file input -
+// same shape as DocumentButton but styled as an inline text link, not a
+// button, to match this form's layout.
+function CurrentFileLink({ url, label }) {
+  const { open, busy, error } = usePresignAndOpen("admin");
+  if (!url) return null;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => open(url)}
+        disabled={busy}
+        style={{ marginTop: "4px", fontSize: "0.86rem", color: "var(--primary)", fontWeight: "bold", background: "none", border: "none", padding: 0, cursor: busy ? "default" : "pointer", textDecoration: "underline" }}
+      >
+        {busy ? "Opening…" : label}
+      </button>
+      {error && <span className="admin-error" style={{ display: "block", fontSize: "0.8rem" }}>{error}</span>}
+    </>
   );
 }
 
@@ -1228,11 +1254,7 @@ function StudentDetails({ id, onClose, onDirtyChange, saveTrigger, onSaveSuccess
                 accept="image/png,image/jpeg,image/jpg"
                 onChange={(e) => handleFileChange("photo", e.target.files[0])}
               />
-              {student.photo?.url && (
-                <a href={getUploadUrl(student.photo.url)} target="_blank" rel="noreferrer" style={{ marginTop: "4px", fontSize: "0.86rem", color: "var(--primary)", fontWeight: "bold" }}>
-                  Current Photo
-                </a>
-              )}
+              <CurrentFileLink url={student.photo?.url} label="Current Photo" />
             </label>
             <label className="admin-field">
               <span>Curriculum Vitae</span>
@@ -1241,11 +1263,7 @@ function StudentDetails({ id, onClose, onDirtyChange, saveTrigger, onSaveSuccess
                 accept="application/pdf"
                 onChange={(e) => handleFileChange("resume", e.target.files[0])}
               />
-              {student.resume?.url && (
-                <a href={getUploadUrl(student.resume.url)} target="_blank" rel="noreferrer" style={{ marginTop: "4px", fontSize: "0.86rem", color: "var(--primary)", fontWeight: "bold" }}>
-                  Current Curriculum Vitae
-                </a>
-              )}
+              <CurrentFileLink url={student.resume?.url} label="Current Curriculum Vitae" />
             </label>
             <label className="admin-field">
               <span>Marksheet</span>
@@ -1254,11 +1272,7 @@ function StudentDetails({ id, onClose, onDirtyChange, saveTrigger, onSaveSuccess
                 accept="application/pdf,image/jpeg,image/jpg"
                 onChange={(e) => handleFileChange("result", e.target.files[0])}
               />
-              {student.result?.url && (
-                <a href={getUploadUrl(student.result.url)} target="_blank" rel="noreferrer" style={{ marginTop: "4px", fontSize: "0.86rem", color: "var(--primary)", fontWeight: "bold" }}>
-                  Current Marksheet
-                </a>
-              )}
+              <CurrentFileLink url={student.result?.url} label="Current Marksheet" />
             </label>
             <label className="admin-field">
               <span>College Recommendation Letter</span>
@@ -1267,11 +1281,7 @@ function StudentDetails({ id, onClose, onDirtyChange, saveTrigger, onSaveSuccess
                 accept="application/pdf,image/jpeg,image/jpg,image/png"
                 onChange={(e) => handleFileChange("permissionLetter", e.target.files[0])}
               />
-              {student.permissionLetter?.url && (
-                <a href={getUploadUrl(student.permissionLetter.url)} target="_blank" rel="noreferrer" style={{ marginTop: "4px", fontSize: "0.86rem", color: "var(--primary)", fontWeight: "bold" }}>
-                  Current Recommendation Letter
-                </a>
-              )}
+              <CurrentFileLink url={student.permissionLetter?.url} label="Current Recommendation Letter" />
             </label>
           </div>
         </section>

@@ -1,5 +1,5 @@
 import axios from "axios";
-import { authHeader, getToken, handleUnauthorized } from "./authSession";
+import { authHeader, handleUnauthorized } from "./authSession";
 import { API_URL } from "../utils/apiUrl";
 
 function studentAuthHeader() {
@@ -60,14 +60,12 @@ export async function fetchStudentDashboard() {
   return parseResponse(response);
 }
 
-// TODO(storage-migration): this still appends ?token= to a plain download
-// link (declaration/character certificate). The backend's query-param token
-// path was intentionally removed (URL-borne tokens leak into access logs,
-// Referer headers, browser history), so this link is deliberately left
-// broken until R2 presigned GET URLs replace it - see the matching TODO on
-// getUploadUrl() in utils/uploadUrl.js for the other half of this decision.
+// Declaration/character certificate PDFs are generated on request by
+// Puppeteer, not stored in R2 - there's no object here to presign. The
+// caller must fetch this with an Authorization header (see FileLink's
+// download branch in StudentDashboard.jsx), not navigate to it directly.
 export function studentDocumentUrl(type) {
-  return `${API_URL}/students/documents/${type}?token=${getToken("student")}`;
+  return `${API_URL}/students/documents/${type}`;
 }
 
 export async function uploadCompletedDocuments(file) {

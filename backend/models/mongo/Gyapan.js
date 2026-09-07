@@ -33,8 +33,10 @@ const gyapanSchema = new Schema(
     // generatedBy/pdfUrl/gyapanUrl/publicId but never declared here - silently
     // dropped on every save until this fix.
     generatedDate: Date,
-    pdfUrl: { type: String, default: "" },
-    gyapanUrl: { type: String, default: "" },
+    // Indexed - the Phase B presign endpoint's admin-side existence check
+    // (middleware/fileAuth.js's authorizeFileKey) queries these directly.
+    pdfUrl: { type: String, default: "", index: true },
+    gyapanUrl: { type: String, default: "", index: true },
     publicId: { type: String, default: "" },
     uploadType: { type: String, default: "Generated" },
     studentRows: [studentRowSchema],

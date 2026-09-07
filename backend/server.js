@@ -33,6 +33,7 @@ const adminRoutes = require("./routes/adminRoutes");
 const offerLetterRoutes = require("./routes/offerLetterRoutes");
 const studentRoutes = require("./routes/studentRoutes");
 const collegeRoutes = require("./routes/collegeRoutes");
+const fileRoutes = require("./routes/fileRoutes");
 const { protectFileAccess } = require("./middleware/fileAuth");
 const { getFileStream, verifyR2Connection, isStorageConfigured, getMissingStorageEnv } = require("./services/s3StorageService");
 const { connectDB, disconnectDB } = require("./config/mongo");
@@ -184,6 +185,7 @@ app.use("/api/students", studentRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/offer-letter", offerLetterRoutes);
 app.use("/api/colleges", collegeRoutes);
+app.use("/api/files", fileRoutes);
 
 // ========================
 // Frontend Static & SPA Fallback

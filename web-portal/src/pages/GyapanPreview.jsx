@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import GyapanViewer from "../components/GyapanViewer";
 import { generateGyapanPdf, getGyapan } from "../services/gyapanService";
-import { getUploadUrl } from "../utils/uploadUrl";
-import { adminAuthHeader, fetchAdminStudent } from "../services/adminService";
-import { assertDownloadOk } from "../services/documentFileService";
+import { fetchAdminStudent } from "../services/adminService";
+import { getPresignedFileUrl } from "../utils/presignedFile";
+import { readDocumentResponse } from "../services/documentFileService";
 import "../styles/admin.css";
 function GyapanPreview({ gyapanId, bufferMode = false }) {
   const module = bufferMode ? "gyapan1" : "gyapan";
@@ -87,9 +87,9 @@ function GyapanPreview({ gyapanId, bufferMode = false }) {
         }
       }
 
-      const response = await fetch(getUploadUrl(data.gyapan.pdfUrl), { headers: adminAuthHeader() });
-      await assertDownloadOk(response, "admin");
-      const blob = await response.blob();
+      const presignedUrl = await getPresignedFileUrl(data.gyapan.pdfUrl, "admin");
+      const response = await fetch(presignedUrl);
+      const blob = await readDocumentResponse(response);
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;

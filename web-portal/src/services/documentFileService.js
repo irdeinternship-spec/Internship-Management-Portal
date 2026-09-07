@@ -1,5 +1,3 @@
-import { handleUnauthorized } from "./authSession";
-
 const PDF_SIGNATURE = "%PDF-";
 
 async function responseMessage(response) {
@@ -8,19 +6,6 @@ async function responseMessage(response) {
 
   const text = await response.text().catch(() => "");
   return text.slice(0, 200) || `Document request failed (${response.status}).`;
-}
-
-/**
- * Guards the raw `fetch(getUploadUrl(...))` calls that bypass the service
- * layer's response parsers. Without this, a non-OK response (401 most
- * likely, given the token now lives in sessionStorage with an 8h expiry)
- * flows straight into `.blob()` and gets handed to the user as a "PDF" that
- * is actually a JSON error body.
- */
-export async function assertDownloadOk(response, role) {
-  if (response.ok) return;
-  if (response.status === 401) handleUnauthorized(role);
-  throw new Error(await responseMessage(response));
 }
 
 /**
