@@ -1,9 +1,5 @@
-const path = require("path");
-const fs = require("fs");
-const cron = require("node-cron");
 const ExcelJS = require("exceljs");
 const Student = require("../models/Student");
-const ActivityLog = require("../models/ActivityLog");
 
 function formatExportDate(value) {
   if (!value) return "-";
@@ -81,82 +77,6 @@ async function generateApplicationsWorkbook() {
   return { workbook, count: students.length };
 }
 
-/**
- * Runs the export job to write the Excel file to the configured env path,
- * overwriting any existing file and recording the result to ActivityLog.
- */
-async function runScheduledExport() {
-  const exportPath = process.env.APPLICATIONS_EXPORT_PATH || process.env.EXCEL_EXPORT_PATH;
-  if (!exportPath) {
-    console.info("ℹ️ [CRON] Applications export path not configured (APPLICATIONS_EXPORT_PATH / EXCEL_EXPORT_PATH unset).");
-    return;
-  }
-
-  const resolvedPath = path.isAbsolute(exportPath)
-    ? exportPath
-    : path.resolve(process.cwd(), exportPath);
-
-  try {
-    const targetDir = path.dirname(resolvedPath);
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true });
-    }
-
-    const { workbook, count } = await generateApplicationsWorkbook();
-    await workbook.xlsx.writeFile(resolvedPath);
-
-    console.log(`✅ [CRON] Hourly Excel export wrote ${count} application(s) to ${resolvedPath}`);
-
-    try {
-      await ActivityLog.create({
-        userId: "system",
-        userName: "System",
-        role: "SYSTEM",
-        module: "Student Module",
-        action: "Hourly Excel Export",
-        description: `Hourly Excel export successfully wrote ${count} student application(s) to ${resolvedPath}`,
-        status: "Success",
-        timestamp: new Date().toISOString(),
-      });
-    } catch (logErr) {
-      console.error("Failed to write ActivityLog for scheduled export:", logErr.message);
-    }
-  } catch (error) {
-    console.error("❌ [CRON] Hourly Excel export failed:", error.message);
-    try {
-      await ActivityLog.create({
-        userId: "system",
-        userName: "System",
-        role: "SYSTEM",
-        module: "Student Module",
-        action: "Hourly Excel Export",
-        description: `Hourly Excel export failed: ${error.message}`,
-        status: "Failed",
-        timestamp: new Date().toISOString(),
-      });
-    } catch (logErr) {
-      console.error("Failed to log scheduled export failure to ActivityLog:", logErr.message);
-    }
-  }
-}
-
-/**
- * Starts the hourly node-cron job (runs at minute 0 of every hour).
- */
-function initScheduledExport() {
-  const exportPath = process.env.APPLICATIONS_EXPORT_PATH || process.env.EXCEL_EXPORT_PATH;
-  const cronExpression = "0 * * * *"; // Hourly
-
-  cron.schedule(cronExpression, async () => {
-    console.log("⏰ [CRON] Triggering hourly applications Excel export...");
-    await runScheduledExport();
-  });
-
-  console.log(`⏰ Scheduled hourly Excel export cron job ('${cronExpression}') configured. Target: ${exportPath || "None (APPLICATIONS_EXPORT_PATH unset)"}`);
-}
-
 module.exports = {
   generateApplicationsWorkbook,
-  runScheduledExport,
-  initScheduledExport,
 };

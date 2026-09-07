@@ -1,9 +1,9 @@
 require("dotenv").config();
 
-// Storage (MinIO/S3) is deliberately NOT in this list, even in production:
-// it's an optional subsystem (R2 migration is a deferred phase) and must
-// never stop the app from booting. See the isStorageConfigured() check below
-// - upload/download routes respond 503 instead.
+// Storage (Cloudflare R2) is deliberately NOT in this list, even in
+// production: it's an optional subsystem and must never stop the app from
+// booting. See the isStorageConfigured() check below - upload/download
+// routes respond 503 instead.
 const requiredEnv = ["JWT_SECRET", "MONGODB_URI", "MAIN_ADMIN_EMAIL", "ENCRYPTION_KEY"];
 if (process.env.NODE_ENV === "production") {
   requiredEnv.push("CORS_ORIGINS");
@@ -29,7 +29,7 @@ const offerLetterRoutes = require("./routes/offerLetterRoutes");
 const studentRoutes = require("./routes/studentRoutes");
 const collegeRoutes = require("./routes/collegeRoutes");
 const { protectFileAccess } = require("./middleware/fileAuth");
-const { getFileStream, verifyMinioConnection, isStorageConfigured, getMissingStorageEnv } = require("./services/s3StorageService");
+const { getFileStream, verifyR2Connection, isStorageConfigured, getMissingStorageEnv } = require("./services/s3StorageService");
 const { connectDB, disconnectDB } = require("./config/mongo");
 
 const app = express();
@@ -39,7 +39,7 @@ const PORT = process.env.PORT || 5000;
 if (!isStorageConfigured()) {
   console.warn(
     `⚠️  File storage is not configured (missing: ${getMissingStorageEnv().join(", ")}). ` +
-    "Upload/download routes will respond 503 until MinIO/S3 credentials are set."
+    "Upload/download routes will respond 503 until R2 credentials are set."
   );
 }
 
@@ -132,7 +132,7 @@ app.use(["/api/admin", "/api/offer-letter"], (req, res, next) => {
 });
 
 // ========================
-// MinIO-backed upload proxy
+// R2-backed upload proxy
 // ========================
 app.use("/uploads", protectFileAccess, async (req, res, next) => {
   const relativePath = req.path.replace(/^\/+/, "");
@@ -235,10 +235,10 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   if (isStorageConfigured()) {
     try {
-      await verifyMinioConnection();
+      await verifyR2Connection();
     } catch (error) {
       // Non-fatal warning at startup; it will fail on demand if bucket is needed
-      console.error("❌ MinIO startup check failed:", error.message);
+      console.error("❌ R2 startup check failed:", error.message);
     }
   }
   try {
@@ -248,12 +248,6 @@ const server = app.listen(PORT, "0.0.0.0", async () => {
     console.error("❌ Chromium check failed:", error.message);
   }
   console.log(`📧 Email service: ${process.env.EMAIL_ENABLED === "true" ? "ENABLED (live delivery)" : "DISABLED (mock mode - logs to ActivityLog)"}`);
-  try {
-    const { initScheduledExport } = require("./services/applicationExportService");
-    initScheduledExport();
-  } catch (error) {
-    console.error("❌ Scheduled export init failed:", error.message);
-  }
 });
 
 // ========================

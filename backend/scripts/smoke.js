@@ -193,7 +193,7 @@ async function main() {
       cgpa: "8.5",
       collegeId: "SMOKE-ID-1",
       internshipDuration: "4 Weeks",
-      internshipJoiningMonth: "January",
+      internshipJoiningMonth: "2026-01",
       permissionLetterNumber: "PL-SMOKE-1",
       permissionLetterDate: "2026-01-01",
     };
