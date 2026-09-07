@@ -271,7 +271,7 @@ function StudentForm({ embedded = false, onClose, defaultInternshipType }) {
               Back
             </button>
             <button className="primary-button" type="submit" disabled={isSubmitting}>
-              {isSubmitting ? <span className="button-loader" /> : "Submit"}
+              {isSubmitting ? <span className="button-loader" /> : "Submit Application"}
             </button>
           </div>
         </div>
@@ -303,7 +303,7 @@ function StudentForm({ embedded = false, onClose, defaultInternshipType }) {
           <img src="/drdo-logo.png" alt="DRDO logo" className="portal-logo" />
           <div>
             <p className="portal-eyebrow">Defence Research and Development Organisation</p>
-            <h1>Student Registration Portal</h1>
+            <h1>Internship Application</h1>
           </div>
         </header>
 

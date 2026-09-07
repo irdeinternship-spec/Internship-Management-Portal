@@ -51,7 +51,7 @@ function StudentLogin() {
 
         <form className="student-form" onSubmit={handleSubmit}>
           <label className="input-field">
-            <span>Registered Email Address</span>
+            <span>Application Email Address</span>
             <input
               name="email"
               type="email"
@@ -61,7 +61,7 @@ function StudentLogin() {
             />
           </label>
           <label className="input-field">
-            <span>Reference ID</span>
+            <span>Application ID</span>
             <input
               name="referenceId"
               value={form.referenceId}

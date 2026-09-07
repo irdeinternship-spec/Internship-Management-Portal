@@ -8,21 +8,21 @@ function navigateTo(path) {
 function Landing({ isPaid = false }) {
   const portalCards = [
     {
-      title: "Student Registration",
+      title: "Apply for Internship",
       description: [
-        "Register for Internship",
+        "Submit a New Application",
         "Fill the Application Form",
         "Upload Required Documents",
       ],
-      buttonText: "Student Registration",
+      buttonText: "Apply for Internship",
       path: isPaid ? "/paid-internship/register" : "/student",
     },
     {
       title: "Student Login",
       description: [
-        "Use Registered Email",
-        "Enter Reference ID",
-        "View Status and Documents",
+        "Use Application Email",
+        "Enter Application ID",
+        "Check Application Status and Documents",
       ],
       buttonText: "Student Login",
       path: isPaid ? "/paid-internship/login" : "/student/login",
@@ -49,7 +49,7 @@ function Landing({ isPaid = false }) {
 
         <p className="landing-welcome">
           Welcome to the official internship management portal. Select the
-          relevant portal below to continue with student registration or
+          relevant portal below to continue with an internship application or
           administrative review.
         </p>
       </section>

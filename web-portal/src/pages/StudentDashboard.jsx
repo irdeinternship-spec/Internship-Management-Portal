@@ -333,7 +333,7 @@ function StudentDashboard() {
             </div>
 
             <div className="student-info-item">
-              <span className="student-info-label">Reference ID: </span>
+              <span className="student-info-label">Application ID: </span>
               <strong>{student.referenceId}</strong>
             </div>
           </div>
@@ -351,7 +351,7 @@ function StudentDashboard() {
           ["Phone Number", student.phone],
           ["Gender", student.gender],
           ["Date of Birth", student.dob],
-          ["Registration Status", student.status],
+          ["Application Status", student.status],
         ]}
       />
 
