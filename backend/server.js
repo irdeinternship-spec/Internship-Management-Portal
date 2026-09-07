@@ -34,8 +34,7 @@ const offerLetterRoutes = require("./routes/offerLetterRoutes");
 const studentRoutes = require("./routes/studentRoutes");
 const collegeRoutes = require("./routes/collegeRoutes");
 const fileRoutes = require("./routes/fileRoutes");
-const { protectFileAccess } = require("./middleware/fileAuth");
-const { getFileStream, verifyR2Connection, isStorageConfigured, getMissingStorageEnv } = require("./services/s3StorageService");
+const { verifyR2Connection, isStorageConfigured, getMissingStorageEnv } = require("./services/s3StorageService");
 const { connectDB, disconnectDB } = require("./config/mongo");
 
 const app = express();
@@ -135,37 +134,6 @@ app.use(["/api/admin", "/api/offer-letter"], (req, res, next) => {
   res.set("Cache-Control", "no-store, private, max-age=0");
   res.set("Pragma", "no-cache");
   next();
-});
-
-// ========================
-// R2-backed upload proxy
-// ========================
-app.use("/uploads", protectFileAccess, async (req, res, next) => {
-  const relativePath = req.path.replace(/^\/+/, "");
-  try {
-    const stream = await getFileStream(relativePath);
-    const ext = path.extname(relativePath).toLowerCase();
-    const mimeTypes = {
-      ".pdf": "application/pdf",
-      ".png": "image/png",
-      ".jpg": "image/jpeg",
-      ".jpeg": "image/jpeg"
-    };
-    if (mimeTypes[ext]) {
-      res.setHeader("Content-Type", mimeTypes[ext]);
-    }
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox;");
-    stream.pipe(res);
-  } catch (error) {
-    if (error.statusCode === 503) {
-      return res.status(503).json({
-        success: false,
-        message: error.message,
-      });
-    }
-    next();
-  }
 });
 
 // ========================
