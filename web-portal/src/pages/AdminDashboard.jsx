@@ -65,7 +65,7 @@ const initialFilters = {
 const CERTIFICATE_DOWNLOADS_KEY = "drdoCertificateDownloadedStudentIds";
 const ISM_DOWNLOADS_KEY = "drdoIsmDownloadedStudentIds";
 const MANAGEMENT_COLUMNS = [
-  ["serial", "S.No."], ["name", "Name"], ["referenceId", "Reference ID"], ["course", "Course"], ["branch", "Branch"], ["year", "Year"], ["collegeName", "College Name"], ["location", "College Location"], ["email", "Email"], ["phone", "Phone"], ["status", "Status"],
+  ["serial", "S.No."], ["name", "Name"], ["referenceId", "Application ID"], ["course", "Course"], ["branch", "Branch"], ["year", "Year"], ["collegeName", "College Name"], ["location", "College Location"], ["email", "Email"], ["phone", "Phone"], ["status", "Status"],
 ];
 
 function savedCertificateDownloadIds() {
@@ -2459,7 +2459,7 @@ function AdminDashboard() {
           <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "16px" }}>
             <input
               type="text"
-              placeholder="Search by Name, Reference ID, Email, Phone, College Name..."
+              placeholder="Search by Name, Application ID, Email, Phone, College Name..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               style={{ flex: "1 1 100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid var(--border-color, #cbd5e1)" }}
@@ -2498,7 +2498,7 @@ function AdminDashboard() {
                   <th hidden={!managementFields.includes("name")} style={{ cursor: "pointer", width: "25%", whiteSpace: "normal", wordBreak: "break-word" }} onClick={() => handleSortClick("name")}>
                     Name {sort.sortBy === "name" && (sort.sortOrder === "asc" ? "▲" : "▼")}
                   </th>
-                  <th hidden={!managementFields.includes("referenceId")}>Reference ID</th>
+                  <th hidden={!managementFields.includes("referenceId")}>Application ID</th>
                   <th hidden={!managementFields.includes("course")} style={{ cursor: "pointer", width: "22%", whiteSpace: "normal", wordBreak: "break-word" }} onClick={() => handleSortClick("course")}>
                     Course {sort.sortBy === "course" && (sort.sortOrder === "asc" ? "▲" : "▼")}
                   </th>
@@ -2779,7 +2779,7 @@ function AdminDashboard() {
                   <h2>Generate {documentModal === "ism" ? "ISM" : "Certificate"}</h2>
                   <p className="admin-muted">Select approved students, then generate {documentModal === "ism" ? "ISM documents grouped by division" : "one certificate for each student"}.</p>
                   <div className="admin-actions-row"><label className="admin-field"><span>Search Students</span><input type="search" placeholder="Student name or college name" value={documentSearch} onChange={(event) => setDocumentSearch(event.target.value)} /></label><button className="admin-secondary-btn" type="button" onClick={selectAllDocumentStudents}>Select All</button><button className="admin-secondary-btn" type="button" onClick={() => setDocumentSelectedIds([])}>Deselect All</button></div>
-                  <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th><input type="checkbox" checked={allDocumentStudentsSelected} onChange={(event) => event.target.checked ? selectAllDocumentStudents() : setDocumentSelectedIds([])} /></th><th>Student Name</th><th>Reference ID</th><th>Division</th><th>College Name</th><th>Branch</th><th>Course</th></tr></thead><tbody>{documentStudents.map((student) => {
+                  <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th><input type="checkbox" checked={allDocumentStudentsSelected} onChange={(event) => event.target.checked ? selectAllDocumentStudents() : setDocumentSelectedIds([])} /></th><th>Student Name</th><th>Application ID</th><th>Division</th><th>College Name</th><th>Branch</th><th>Course</th></tr></thead><tbody>{documentStudents.map((student) => {
                     const isCertificate = documentModal === "certificate";
                     const isDownloaded = isCertificate
                       ? (certificateDownloadedIds.includes(student._id) || student.certificateGenerated)

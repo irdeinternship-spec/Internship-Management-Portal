@@ -103,7 +103,7 @@ function StudentFullProfile() {
         <div>
           <p className="portal-eyebrow">DRDO Student Full Profile</p>
           <h1>{student.name}</h1>
-          <p style={{ marginTop: "4px", color: "var(--text-muted)" }}>Reference ID: {student.referenceId}</p>
+          <p style={{ marginTop: "4px", color: "var(--text-muted)" }}>Application ID: {student.referenceId}</p>
         </div>
       </header>
 
@@ -157,8 +157,8 @@ function StudentFullProfile() {
         title="Section 5: Internship Information"
         rows={[
           ["Internship Duration", student.internshipDuration],
-          ["College Recommendation Letter Number", student.permissionLetterNumber],
-          ["College Recommendation Letter Date", student.permissionLetterDate],
+          ["College Referral Letter Number", student.permissionLetterNumber],
+          ["College Referral Letter Date", student.permissionLetterDate],
           ["Joining Month", student.internshipJoiningMonth],
         ]}
       />
@@ -184,7 +184,7 @@ function StudentFullProfile() {
           <DocumentButton label="Curriculum Vitae" file={student.resume} />
           <DocumentButton label="Marksheet" file={student.result} />
           <DocumentButton label="Aadhaar Card" file={student.aadhaarCard} />
-          <DocumentButton label="Permission Letter" file={student.permissionLetter} />
+          <DocumentButton label="College Referral Letter" file={student.permissionLetter} />
         </div>
       </section>
     </main>

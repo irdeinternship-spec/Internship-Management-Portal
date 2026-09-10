@@ -124,7 +124,7 @@ function validateStepTwo(form) {
     [
       "permissionLetter",
       ["application/pdf", "image/jpeg", "image/jpg", "image/png"],
-      "College Recommendation Letter must be PDF, JPG, JPEG, or PNG.",
+      "College Referral Letter must be PDF, JPG, JPEG, or PNG.",
     ],
     ["resume", ["application/pdf"], "Curriculum Vitae must be a PDF."],
     ["result", ["application/pdf", "image/jpeg", "image/jpg"], "Marksheet must be PDF, JPG, or JPEG."],
@@ -151,7 +151,7 @@ function validateStepTwo(form) {
       const displayNames = {
         resume: "Curriculum Vitae",
         result: "Marksheet",
-        permissionLetter: "College Recommendation Letter",
+        permissionLetter: "College Referral Letter",
         photo: "Photo",
         aadhaarCard: "Aadhaar Card"
       };
@@ -169,7 +169,7 @@ function validateStepTwo(form) {
     errors.internshipJoiningMonth = "Select a valid internship joining month.";
   }
   if (form.permissionLetterDate && !isValidDateValue(form.permissionLetterDate)) {
-    errors.permissionLetterDate = "Select a valid college recommendation letter date.";
+    errors.permissionLetterDate = "Select a valid college referral letter date.";
   }
 
   return errors;

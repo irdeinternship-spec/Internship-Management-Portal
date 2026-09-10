@@ -1275,13 +1275,13 @@ function StudentDetails({ id, onClose, onDirtyChange, saveTrigger, onSaveSuccess
               <CurrentFileLink url={student.result?.url} label="Current Marksheet" />
             </label>
             <label className="admin-field">
-              <span>College Recommendation Letter</span>
+              <span>College Referral Letter</span>
               <input
                 type="file"
                 accept="application/pdf,image/jpeg,image/jpg,image/png"
                 onChange={(e) => handleFileChange("permissionLetter", e.target.files[0])}
               />
-              <CurrentFileLink url={student.permissionLetter?.url} label="Current Recommendation Letter" />
+              <CurrentFileLink url={student.permissionLetter?.url} label="Current Referral Letter" />
             </label>
           </div>
         </section>
@@ -1294,7 +1294,7 @@ function StudentDetails({ id, onClose, onDirtyChange, saveTrigger, onSaveSuccess
             <DocumentButton label="Marksheet" file={student.result} />
             <DocumentButton label="Aadhaar Card" file={student.aadhaarCard} />
             <DocumentButton
-              label="College Recommendation Letter"
+              label="College Referral Letter"
               file={student.permissionLetter}
             />
             <DocumentButton

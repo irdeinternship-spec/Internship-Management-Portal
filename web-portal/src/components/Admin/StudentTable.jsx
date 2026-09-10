@@ -38,7 +38,7 @@ function StudentTable({
             {offerLetterMode && <th>Select</th>}
             <th>Serial No.</th>
             <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => handleHeaderClick("referenceId")}>
-              Reference ID{renderSortArrow("referenceId")}
+              Application ID{renderSortArrow("referenceId")}
             </th>
             <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => handleHeaderClick("name")}>
               Student Name{renderSortArrow("name")}

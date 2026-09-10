@@ -78,6 +78,14 @@ function AcademicSection({ form, errors, onChange }) {
           required
         />
 
+        <p className="field__warning">
+          <span className="field__warning-icon" aria-hidden="true">&#9888;</span>
+          <span>
+            Warning: declaring a false CGPA will lead to blacklisting from
+            future opportunities at this establishment.
+          </span>
+        </p>
+
         <SearchableDropdown
           label='College Name (If your college is not listed, select "Other")'
           name="collegeName"

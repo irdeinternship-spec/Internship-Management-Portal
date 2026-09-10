@@ -43,14 +43,14 @@ function DocumentForm({ form, errors, onChange }) {
             />
           )}
           <TextInput
-            label="College Recommendation Letter Number"
+            label="College Referral Letter Number"
             name="permissionLetterNumber"
             value={form.permissionLetterNumber}
             onChange={onChange}
             error={errors.permissionLetterNumber}
           />
           <TextInput
-            label="College Recommendation Letter Date"
+            label="College Referral Letter Date"
             name="permissionLetterDate"
             type="date"
             value={form.permissionLetterDate}
@@ -60,7 +60,7 @@ function DocumentForm({ form, errors, onChange }) {
             required
           />
           <FileInput
-            label="College Recommendation Letter (Maximum File Size: 10 MB)"
+            label="College Referral Letter (Maximum File Size: 10 MB)"
             name="permissionLetter"
             onChange={onChange}
             error={errors.permissionLetter}

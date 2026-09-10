@@ -260,6 +260,32 @@ input[type="month"].field__control + .field__label {
   font-weight: 650;
 }
 
+/* Advisory notice, NOT an error state - amber rather than --danger on purpose:
+   nothing is wrong yet, it's a deterrent shown before the user types. Spans
+   both .form-grid columns so the sentence isn't cramped into a half-width cell. */
+.field__warning {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: -6px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(180, 83, 9, 0.28);
+  border-left: 3px solid #b45309;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.12);
+  color: #92400e;
+  font-size: 0.82rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.field__warning-icon {
+  flex-shrink: 0;
+  font-size: 0.95rem;
+  line-height: 1.3;
+}
+
 .field--error .field__control,
 .field--error .file-field__control {
   border-color: rgba(217, 48, 37, 0.8);

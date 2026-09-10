@@ -18,7 +18,7 @@ async function createUniqueReferenceId() {
     const exists = await Student.exists({ referenceId });
     if (!exists) return referenceId;
   }
-  throw new Error("Unable to generate a unique Reference ID.");
+  throw new Error("Unable to generate a unique Application ID.");
 }
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -101,7 +101,7 @@ function validatePerFieldSize(req, file, cb) {
     let displayName = file.fieldname;
     if (file.fieldname === "resume") displayName = "Curriculum Vitae";
     if (file.fieldname === "result") displayName = "Marksheet";
-    if (file.fieldname === "permissionLetter") displayName = "College Recommendation Letter";
+    if (file.fieldname === "permissionLetter") displayName = "College Referral Letter";
 
     return cb(
       new Error(

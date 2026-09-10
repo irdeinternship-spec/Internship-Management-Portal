@@ -136,7 +136,7 @@ function validateRequest(body, files) {
   }
 
   if (!isValidDateValue(body.permissionLetterDate)) {
-    return "Select a valid college recommendation letter date.";
+    return "Select a valid college referral letter date.";
   }
 
   const cgpa = Number(body.cgpa);
@@ -168,7 +168,7 @@ async function createUniqueReferenceId() {
     if (!exists) return referenceId;
   }
 
-  throw new Error("Unable to generate a unique Reference ID.");
+  throw new Error("Unable to generate a unique Application ID.");
 }
 
 async function getNextSerialNumber() {
@@ -400,7 +400,7 @@ async function loginStudent(req, res) {
     if (!email || !referenceId) {
       return res.status(400).json({
         success: false,
-        message: "Registered email address and Reference ID are required.",
+        message: "Registered email address and Application ID are required.",
       });
     }
 
@@ -409,7 +409,7 @@ async function loginStudent(req, res) {
     if (!student) {
       return res.status(401).json({
         success: false,
-        message: "Email address and Reference ID do not match any registration.",
+        message: "Email address and Application ID do not match any registration.",
       });
     }
 

@@ -1031,7 +1031,7 @@ async function updateStudentDetails(req, res) {
     }
 
     if (body.permissionLetterDate && !isValidDateValue(body.permissionLetterDate)) {
-      return res.status(400).json({ success: false, message: "Select a valid college recommendation letter date." });
+      return res.status(400).json({ success: false, message: "Select a valid college referral letter date." });
     }
 
     if (body.cgpa) {

@@ -236,10 +236,10 @@ async function sendRegistrationConfirmationEmail(student) {
 
 Your internship registration has been submitted successfully.
 
-Reference ID: ${student.referenceId}
+Application ID: ${student.referenceId}
 Serial Number: ${student.serialNumber || "-"}
 
-Please keep this Reference ID safe. You will need your registered email address and Reference ID to log in to the Student Portal.
+Please keep this Application ID safe. You will need your registered email address and Application ID to log in to the Student Portal.
 
 Regards,
 Internship Management Team`,

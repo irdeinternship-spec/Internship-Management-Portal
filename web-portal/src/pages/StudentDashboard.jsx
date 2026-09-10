@@ -393,7 +393,7 @@ function StudentDashboard() {
           <FileLink label="View Curriculum Vitae" href={student.resume?.url} />
           <FileLink label="View Marksheet" href={student.result?.url} />
           <FileLink
-            label="View College Recommendation Letter"
+            label="View College Referral Letter"
             href={student.permissionLetter?.url}
           />
           <FileLink label="View Aadhaar Card" href={student.aadhaarCard?.url} />
