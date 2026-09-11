@@ -3,6 +3,7 @@ const fsp = require("fs/promises");
 const path = require("path");
 
 const { connectDB, disconnectDB } = require("../config/mongo");
+const { requireWriteTarget } = require("../config/testEnvironment");
 const Student = require("../models/mongo/Student");
 const Admin = require("../models/mongo/Admin");
 const Gyapan = require("../models/mongo/Gyapan");
@@ -20,16 +21,30 @@ const Duration = require("../models/mongo/Duration");
 // registration-form dropdowns (web-portal/src/data/{courses,branches,internshipDurations}.js)
 // are separate, hardcoded, and NOT fetched from these collections at all -
 // checked, no other seed data is implied by the frontend for these three.
-const COURSE_DEFAULTS = ["B.Tech", "M.Tech", "M.Sc", "PhD"];
+// Objects, not bare names: Course.level is required as of the reference-data
+// change, so a fresh seed has to supply one or Model.create() fails
+// validation. "Ph.D." is the canonical spelling - see
+// scripts/migrateCourses.js for why, and for the migration that brings an
+// already-seeded database to it.
+const COURSE_DEFAULTS = [
+  { name: "B.Tech", level: "undergraduate" },
+  { name: "M.Tech", level: "postgraduate" },
+  { name: "M.Sc", level: "postgraduate" },
+  { name: "Ph.D.", level: "postgraduate" },
+];
+// The five branches actually in use. Aerospace Engineering, Civil Engineering
+// and Artificial Intelligence and Data Science were RETIRED DELIBERATELY through
+// the admin panel and must not be reintroduced - a seed run against a live
+// database re-inserted all three once (upsertReferenceList adds anything
+// missing by name), which put them back on the public application form.
+// Do not re-add them here; add branches through Management -> Branch instead,
+// which is the source of truth this list only bootstraps.
 const BRANCH_DEFAULTS = [
   "Computer Science and Engineering",
   "Information Technology",
   "Electronics and Communication",
   "Electrical Engineering",
   "Mechanical Engineering",
-  "Civil Engineering",
-  "Aerospace Engineering",
-  "Artificial Intelligence and Data Science",
 ];
 const DURATION_DEFAULTS = ["1 Week", "2 Weeks", "3 Weeks", "4 Weeks", "6 Weeks", "8 Weeks", "10 Weeks", "12 Weeks"];
 
@@ -58,21 +73,24 @@ function log(section, message) {
 // sequentially from whatever the current max already in the collection is,
 // so re-running this script never re-numbers or duplicates existing rows.
 
-async function upsertReferenceList(Model, label, names) {
+// Entries may be a plain name string or a { name, ...extraFields } object -
+// courses need to carry `level` through, colleges/branches/durations don't.
+async function upsertReferenceList(Model, label, entries) {
   const existing = await Model.find({}).lean();
   const existingByName = new Map(existing.map((doc) => [doc.name.toLocaleLowerCase("en-US"), doc]));
   let nextId = existing.reduce((max, doc) => Math.max(max, doc._id), 0) + 1;
   let inserted = 0;
 
-  for (const name of names) {
+  for (const entry of entries) {
+    const { name, ...extraFields } = typeof entry === "string" ? { name: entry } : entry;
     const key = name.toLocaleLowerCase("en-US");
     if (existingByName.has(key)) continue;
-    await Model.create({ _id: nextId, name });
+    await Model.create({ _id: nextId, name, ...extraFields });
     existingByName.set(key, { _id: nextId, name });
     nextId += 1;
     inserted += 1;
   }
-  log(label, `${inserted} inserted, ${names.length - inserted} already present.`);
+  log(label, `${inserted} inserted, ${entries.length - inserted} already present.`);
 }
 
 async function seedColleges() {
@@ -99,37 +117,91 @@ async function seedCoursesBranchesDurations() {
 // pre('save') hashing hook, guarded the same way, so the resulting hash is
 // produced by the exact same code login later compares against.
 
-async function seedMainAdmin() {
-  const mainAdminEmail = process.env.MAIN_ADMIN_EMAIL;
-  if (!mainAdminEmail) {
+// Credentials are parameters with env defaults, not direct env reads: the
+// smoke suite seeds its own throwaway database with an admin password it
+// generates per run, so the suite can never again be broken by someone
+// changing the live admin's password (which is exactly what happened - every
+// admin-authenticated test cascaded to 401 against a stale
+// MAIN_ADMIN_INITIAL_PASSWORD). `npm run seed` passes nothing and behaves
+// exactly as before.
+async function seedMainAdmin({ mainAdminEmail, mainAdminPassword } = {}) {
+  const email = mainAdminEmail || process.env.MAIN_ADMIN_EMAIL;
+  if (!email) {
     throw new Error("MAIN_ADMIN_EMAIL is not configured in backend/.env.");
   }
 
-  const existing = await Admin.findOne({ email: mainAdminEmail });
+  const existing = await Admin.findOne({ email });
   if (existing) {
-    log("admin", `Main Admin (${mainAdminEmail}) already exists.`);
+    log("admin", `Main Admin (${email}) already exists.`);
     return;
   }
 
-  const plainPassword = process.env.MAIN_ADMIN_INITIAL_PASSWORD;
+  const plainPassword = mainAdminPassword || process.env.MAIN_ADMIN_INITIAL_PASSWORD;
   if (!plainPassword) {
-    throw new Error("MAIN_ADMIN_INITIAL_PASSWORD is required to create the initial admin.");
+    throw new Error(
+      "No main-admin password supplied, and MAIN_ADMIN_INITIAL_PASSWORD is not set. " +
+        "It is only needed the very first time an environment is seeded."
+    );
   }
 
   await Admin.create({
     name: process.env.MAIN_ADMIN_NAME || "Main Administrator",
-    email: mainAdminEmail,
+    email,
     password: plainPassword,
     role: "MAIN_ADMIN",
   });
-  log("admin", `Main Admin (${mainAdminEmail}) created.`);
+  log("admin", `Main Admin (${email}) created.`);
 }
 
 // --- Administration singleton -------------------------------------------
 
+// Divisions exist by default but arrive with NO branch/seat configuration, so a
+// freshly-seeded environment cannot allocate a single student to a division -
+// validateDivisionCapacity() rejects every attempt with "No seats are
+// configured for <branch> in <division>". That never showed up while the smoke
+// suite ran against production, where a human had configured seats by hand;
+// pointing it at an empty test database surfaced it immediately.
+//
+// Seeds capacity for the divisions the sample students and the smoke suite
+// actually use, leaving the rest unconfigured (which is the honest default -
+// an admin still has to configure the others deliberately).
+// Per-branch seats, applied to all 8 seeded branches in each division below.
+// Kept deliberately modest: these totals are validated against the overall
+// paid/unpaid seat limits (controllers/administrationController.js's
+// updateSeats refuses a limit lower than what divisions already reserve), so
+// generous defaults here would make a perfectly reasonable seat limit
+// unsettable. 2 divisions x 8 branches gives 32 paid / 48 unpaid, comfortably
+// inside the 100/150 the smoke suite sets and the 250 default total.
+const DIVISION_SEAT_DEFAULTS = {
+  "Servo System": { paid: 2, unpaid: 3 },
+  AI: { paid: 2, unpaid: 3 },
+};
+
 async function seedAdministration() {
   const configuration = await Administration.getAdministration();
-  log("administration", `Singleton ready (${configuration.divisions.length} divisions, nextCertificateNumber=${configuration.nextCertificateNumber}).`);
+
+  let configured = 0;
+  for (const [division, seats] of Object.entries(DIVISION_SEAT_DEFAULTS)) {
+    if (!configuration.divisions.includes(division)) continue;
+    const existing = configuration.divisionConfigurations[division];
+    // Idempotent: never overwrite capacity an admin has already set.
+    if (existing?.allowedBranches?.length) continue;
+
+    configuration.divisionConfigurations[division] = {
+      allowedBranches: [...BRANCH_DEFAULTS],
+      branchSeats: Object.fromEntries(BRANCH_DEFAULTS.map((branch) => [branch, { ...seats }])),
+      paidSeats: seats.paid * BRANCH_DEFAULTS.length,
+      unpaidSeats: seats.unpaid * BRANCH_DEFAULTS.length,
+    };
+    configured += 1;
+  }
+
+  if (configured) await Administration.saveAdministration(configuration);
+
+  log(
+    "administration",
+    `Singleton ready (${configuration.divisions.length} divisions, ${configured} newly configured with branch seats, nextCertificateNumber=${configuration.nextCertificateNumber}).`
+  );
 }
 
 // --- Sample students ----------------------------------------------------
@@ -404,24 +476,38 @@ async function reportCounts() {
   console.log("========================================================");
 }
 
+// Seeds whatever database is ALREADY connected - it does not connect or
+// disconnect. scripts/smoke.js calls this on its own test connection, which it
+// keeps open afterwards for its assertPersisted() reads.
+async function seedAll({ mainAdminEmail, mainAdminPassword } = {}) {
+  await seedColleges();
+  await seedCoursesBranchesDurations();
+  await seedMainAdmin({ mainAdminEmail, mainAdminPassword });
+  await seedAdministration();
+  await seedStudents();
+  await seedGyapan();
+  await reportCounts();
+}
+
 async function main() {
-  await connectDB();
+  // Announces the target database and refuses production without --yes.
+  await connectDB(requireWriteTarget({ scriptName: "seed" }));
   try {
-    await seedColleges();
-    await seedCoursesBranchesDurations();
-    await seedMainAdmin();
-    await seedAdministration();
-    await seedStudents();
-    await seedGyapan();
-    await reportCounts();
+    await seedAll();
   } finally {
     await disconnectDB();
   }
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((error) => {
-    console.error("❌ Seeding failed:", error.message);
-    process.exit(1);
-  });
+// Only self-execute when run directly (`npm run seed`). Requiring this file as
+// a module must not kick off a seed as a side effect.
+if (require.main === module) {
+  main()
+    .then(() => process.exit(0))
+    .catch((error) => {
+      console.error("❌ Seeding failed:", error.message);
+      process.exit(1);
+    });
+}
+
+module.exports = { seedAll };

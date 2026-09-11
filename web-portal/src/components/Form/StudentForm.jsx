@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { indianStatesAndUnionTerritories } from "../../data/states";
 import { submitStudentRegistration } from "../../services/studentService";
+import { useReferenceData } from "../../hooks/useReferenceData";
 import AcademicSection from "./AcademicSection";
 import AddressSection from "./AddressSection";
 import DocumentForm from "./DocumentForm";
@@ -66,7 +66,7 @@ function isValidDateValue(value) {
   );
 }
 
-function validateStepOne(form) {
+function validateStepOne(form, validStates) {
   const errors = {};
   const requiredFields = [
     "name",
@@ -103,10 +103,10 @@ function validateStepOne(form) {
   if (form.aadhaarNumber && !/^\d{12}$/.test(form.aadhaarNumber)) {
     errors.aadhaarNumber = "Aadhaar Number must contain exactly 12 digits.";
   }
-  if (
-    form.collegeState &&
-    !indianStatesAndUnionTerritories.includes(form.collegeState)
-  ) {
+  // validStates is the live list from /api/reference, which the backend serves
+  // from the SAME constant it validates a submitted collegeState against - so
+  // this client check can no longer drift from the server's.
+  if (form.collegeState && validStates.length && !validStates.includes(form.collegeState)) {
     errors.collegeState = "Select a valid college state or union territory.";
   }
 
@@ -188,6 +188,12 @@ function StudentForm({ embedded = false, onClose, defaultInternshipType }) {
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
+  // Course/branch/duration/state options are fetched, so the form cannot be
+  // advanced or submitted until they arrive. Blocking here rather than letting
+  // an applicant fill a form whose dropdowns are empty and submit something
+  // the server will reject.
+  const reference = useReferenceData();
+  const referenceUnavailable = reference.loading || Boolean(reference.error);
 
   const handleChange = (event) => {
     const { name, value, type, checked, files } = event.target;
@@ -205,7 +211,7 @@ function StudentForm({ embedded = false, onClose, defaultInternshipType }) {
   };
 
   const goToDocuments = () => {
-    const nextErrors = validateStepOne(form);
+    const nextErrors = validateStepOne(form, reference.states);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length === 0) setStep(2);
   };
@@ -245,15 +251,27 @@ function StudentForm({ embedded = false, onClose, defaultInternshipType }) {
 
   const formContent = (
     <form onSubmit={handleSubmit} className="student-form" noValidate style={embedded ? { padding: 0, border: "none", boxShadow: "none", background: "none", width: "100%" } : {}}>
+      {reference.error && (
+        <div className="form-load-error" role="alert">
+          <span className="form-load-error__icon" aria-hidden="true">&#9888;</span>
+          <div>
+            <p className="form-load-error__text">{reference.error}</p>
+            <button className="secondary-button" type="button" onClick={reference.retry}>
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
       {step === 1 ? (
         <div className="form-page">
           <PersonalForm form={form} errors={errors} onChange={handleChange} />
-          <AcademicSection form={form} errors={errors} onChange={handleChange} />
+          <AcademicSection form={form} errors={errors} onChange={handleChange} reference={reference} />
           <AddressSection form={form} errors={errors} onChange={handleChange} />
           <ParentSection form={form} errors={errors} onChange={handleChange} />
           <div className="button-row">
-            <button className="primary-button" type="button" onClick={goToDocuments}>
-              Next
+            <button className="primary-button" type="button" onClick={goToDocuments} disabled={referenceUnavailable}>
+              {reference.loading ? "Loading options..." : "Next"}
             </button>
             {embedded && onClose && (
               <button className="secondary-button" type="button" onClick={onClose}>
@@ -264,13 +282,13 @@ function StudentForm({ embedded = false, onClose, defaultInternshipType }) {
         </div>
       ) : (
         <div className="form-page">
-          <DocumentForm form={form} errors={errors} onChange={handleChange} />
+          <DocumentForm form={form} errors={errors} onChange={handleChange} reference={reference} />
           {errors.submit && <p className="submit-error">{errors.submit}</p>}
           <div className="button-row">
             <button className="secondary-button" type="button" onClick={() => setStep(1)}>
               Back
             </button>
-            <button className="primary-button" type="submit" disabled={isSubmitting}>
+            <button className="primary-button" type="submit" disabled={isSubmitting || referenceUnavailable}>
               {isSubmitting ? <span className="button-loader" /> : "Submit Application"}
             </button>
           </div>

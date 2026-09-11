@@ -1,11 +1,14 @@
-import { internshipDurations } from "../../data/internshipDurations";
 import { sortDurations } from "../../utils/durationSort";
 import FileInput from "../Inputs/FileInput";
 import SelectInput from "../Inputs/SelectInput";
 import TextInput from "../Inputs/TextInput";
 
-function DocumentForm({ form, errors, onChange }) {
+// `reference` comes from StudentForm's useReferenceData() - durations are live
+// reference data now, editable from the admin Management screen.
+function DocumentForm({ form, errors, onChange, reference }) {
   const today = new Date().toISOString().split("T")[0];
+  const { durations, loading, error } = reference;
+  const optionsUnavailable = loading || Boolean(error);
 
   return (
     <>
@@ -26,8 +29,10 @@ function DocumentForm({ form, errors, onChange }) {
               name="internshipDuration"
               value={form.internshipDuration}
               onChange={onChange}
-              options={sortDurations(internshipDurations)}
+              options={sortDurations(durations)}
               error={errors.internshipDuration}
+              disabled={optionsUnavailable}
+              placeholder={loading ? "Loading options..." : error ? "Unavailable" : "Select"}
               required
             />
           )}

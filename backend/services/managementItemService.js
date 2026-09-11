@@ -74,8 +74,36 @@ function modelFor(type) {
   return model;
 }
 
+// `level` is only present on Course documents, so it's emitted conditionally
+// rather than as a fixed key - branches and durations keep the exact
+// { id, name } shape they've always returned, which the admin Management
+// screen and the public reference endpoint both already depend on.
 function toApiShape(doc) {
-  return { id: doc._id, name: doc.name };
+  const shape = { id: doc._id, name: doc.name };
+  if (doc.level) shape.level = doc.level;
+  return shape;
+}
+
+const COURSE_LEVELS = ["undergraduate", "postgraduate"];
+
+// Courses carry a required `level`; branches and durations have no such field
+// and must reject one rather than silently accepting an ignored argument.
+function resolveLevel(type, level, { existing } = {}) {
+  if (type !== "courses") {
+    if (level) throw failure(`A ${labels[type].toLowerCase()} has no level.`, 400);
+    return undefined;
+  }
+  const value = String(level || "").trim().toLowerCase();
+  if (!value) {
+    // On update, keeping the level the document already has is the sensible
+    // default; on create (no existing doc) there is nothing to fall back to.
+    if (existing?.level) return existing.level;
+    throw failure("Course level is required (undergraduate or postgraduate).", 400);
+  }
+  if (!COURSE_LEVELS.includes(value)) {
+    throw failure("Course level must be either undergraduate or postgraduate.", 400);
+  }
+  return value;
 }
 
 async function list(type) {
@@ -84,11 +112,12 @@ async function list(type) {
   return items.sort(type === "durations" ? compareDurations : (a, b) => a.name.localeCompare(b.name));
 }
 
-async function create(type, name) {
+async function create(type, name, level) {
   const model = modelFor(type);
   const label = labels[type];
   const value = normalize(name);
   if (!value) throw failure(`${label} name is required.`, 400);
+  const resolvedLevel = resolveLevel(type, level);
 
   const existing = await model.findOne({ name: value }).collation(CASE_INSENSITIVE).lean();
   if (existing) throw failure(`${label} already exists.`, 409);
@@ -102,11 +131,13 @@ async function create(type, name) {
   const highest = await model.findOne({}).sort({ _id: -1 }).lean();
   const id = (highest ? highest._id : 0) + 1;
 
-  const created = await model.create({ _id: id, name: value });
+  const created = await model.create(
+    resolvedLevel ? { _id: id, name: value, level: resolvedLevel } : { _id: id, name: value }
+  );
   return toApiShape(created);
 }
 
-async function update(type, id, name) {
+async function update(type, id, name, level) {
   const model = modelFor(type);
   const label = labels[type];
   const value = normalize(name);
@@ -120,6 +151,11 @@ async function update(type, id, name) {
   if (duplicate) throw failure(`${label} already exists.`, 409);
 
   existing.name = value;
+  // Resolved AFTER the document is loaded so an omitted level falls back to
+  // the one already stored. Without this, renaming a course through the admin
+  // screen would hit Course.level's required validator on .save() and fail.
+  const resolvedLevel = resolveLevel(type, level, { existing });
+  if (resolvedLevel) existing.level = resolvedLevel;
   await existing.save();
   return toApiShape(existing);
 }

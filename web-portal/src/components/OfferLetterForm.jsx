@@ -1,7 +1,9 @@
 import { sortDurations } from "../utils/durationSort";
-import { internshipDurations } from "../data/internshipDurations";
+import { useReferenceData } from "../hooks/useReferenceData";
 
 function OfferLetterForm({ form, saving, onChange, onSubmit }) {
+  // Durations are live reference data now, from /api/reference.
+  const { durations } = useReferenceData();
   const updateField = (key, value) => {
     onChange({ ...form, [key]: value });
   };
@@ -116,7 +118,7 @@ function OfferLetterForm({ form, saving, onChange, onSubmit }) {
             }
           >
             <option value="">Select Duration</option>
-            {sortDurations(internshipDurations).map((duration) => (
+            {sortDurations(durations).map((duration) => (
               <option key={duration} value={duration}>
                 {duration}
               </option>

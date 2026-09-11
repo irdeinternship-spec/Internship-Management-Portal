@@ -7,6 +7,7 @@ function SelectInput({
   error,
   required = false,
   placeholder = "Select",
+  disabled = false,
 }) {
   return (
     <label className={`field ${error ? "field--error" : ""}`}>
@@ -16,6 +17,7 @@ function SelectInput({
         value={value}
         onChange={onChange}
         required={required}
+        disabled={disabled}
         aria-invalid={Boolean(error)}
         aria-describedby={error ? `${name}-error` : undefined}
       >

@@ -14,7 +14,7 @@ exports.list = async (req, res, next) => {
 
 exports.create = async (req, res, next) => {
   try {
-    const item = await service.create(type(req), req.body.name);
+    const item = await service.create(type(req), req.body.name, req.body.level);
     const suffix = getSuffix(req);
     await logActivity({
       req,
@@ -38,7 +38,7 @@ exports.create = async (req, res, next) => {
 };
 
 exports.update = async (req, res, next) => {
-  try { res.json({ success: true, item: await service.update(type(req), req.params.id, req.body.name) }); } catch (error) { next(error); }
+  try { res.json({ success: true, item: await service.update(type(req), req.params.id, req.body.name, req.body.level) }); } catch (error) { next(error); }
 };
 
 exports.remove = async (req, res, next) => {

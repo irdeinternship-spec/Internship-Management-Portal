@@ -9,6 +9,7 @@ function SearchableDropdown({
   error,
   required = false,
   placeholder = "Search and select",
+  disabled = false,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const fieldRef = useRef(null);
@@ -110,10 +111,11 @@ function SearchableDropdown({
         name={name}
         value={value}
         onChange={handleInputChange}
-        onFocus={() => setIsOpen(true)}
-        onClick={() => setIsOpen(true)}
+        onFocus={() => !disabled && setIsOpen(true)}
+        onClick={() => !disabled && setIsOpen(true)}
         placeholder={placeholder}
         required={required}
+        disabled={disabled}
         autoComplete="off"
         role="combobox"
         aria-expanded={isOpen}

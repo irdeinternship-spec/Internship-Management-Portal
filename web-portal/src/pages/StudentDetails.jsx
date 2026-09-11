@@ -16,36 +16,11 @@ import {
   uploadOfferLetterPdf,
 } from "../services/offerLetterService";
 import { usePresignAndOpen } from "../utils/presignedFile";
-import { branches as registeredBranchOptions } from "../data/branches";
-import { internshipDurations } from "../data/internshipDurations";
 import { sortDurations } from "../utils/durationSort";
-import { indianStatesAndUnionTerritories } from "../data/states";
+import { years as yearOptions } from "../data/years";
+import { useReferenceData } from "../hooks/useReferenceData";
+import { withCurrentValue } from "../utils/withCurrentValue";
 import "../styles/admin.css";
-
-const courseOptions = [
-  "B.Tech",
-  "M.Tech",
-  "M.Sc",
-  "Ph.D",
-];
-
-const yearOptions = [
-  "1st Year",
-  "2nd Year",
-  "3rd Year",
-  "4th Year",
-];
-
-function normalizeCourse(course) {
-  const value = String(course || "").trim();
-  const comparableValue = value.replace(/\.$/, "").toLowerCase();
-
-  return (
-    courseOptions.find(
-      (option) => option.replace(/\.$/, "").toLowerCase() === comparableValue,
-    ) || value
-  );
-}
 
 function formatDate(value) {
   if (!value) return "-";
@@ -153,14 +128,22 @@ function addDurationToDate(fromDate, duration) {
 
 function TrainingManagementForm({ student, divisions, onUpdated, alwaysOpen = false, saveRef = null }) {
   const existing = student.trainingManagement || {};
-  const branchOptions = [...new Set([
-    ...registeredBranchOptions,
-    existing.branch,
-    student.branch,
-  ].filter(Boolean))];
+  const { branches, courses, durations } = useReferenceData();
+  // withCurrentValue keeps whatever this record already holds selectable even
+  // after it has been retired from the reference collection - three live
+  // records hold a branch that no longer exists, and without this their select
+  // renders blank and a save writes the blank back.
+  const branchOptions = withCurrentValue(branches, existing.branch, student.branch);
+  const courseOptions = withCurrentValue(courses, existing.courseName, student.course);
+  const yearSelectOptions = withCurrentValue(yearOptions, existing.courseYear, student.year);
+  const durationOptions = withCurrentValue(
+    sortDurations(durations),
+    existing.trainingDuration,
+    student.internshipDuration
+  );
   const [form, setForm] = useState({
     studentName: existing.studentName || student.name || "",
-    courseName: normalizeCourse(existing.courseName || student.course),
+    courseName: existing.courseName || student.course || "",
     courseYear: existing.courseYear || student.year || "",
     branch: existing.branch || student.branch || "",
     collegeName: existing.collegeName || student.collegeName || "",
@@ -436,7 +419,7 @@ function TrainingManagementForm({ student, divisions, onUpdated, alwaysOpen = fa
         onChange={handleChange}
       >
         <option value="">Select Year</option>
-        {yearOptions.map((year) => (
+        {yearSelectOptions.map((year) => (
           <option key={year} value={year}>
             {year}
           </option>
@@ -573,7 +556,7 @@ function TrainingManagementForm({ student, divisions, onUpdated, alwaysOpen = fa
               <span>Training Duration</span>
               <select name="trainingDuration" value={form.trainingDuration} onChange={handleChange}>
                 <option value="">Select duration</option>
-                {sortDurations(internshipDurations).map((duration) => <option key={duration} value={duration}>{duration}</option>)}
+                {durationOptions.map((duration) => <option key={duration} value={duration}>{duration}</option>)}
               </select>
             </label>
           )}
@@ -616,6 +599,7 @@ function TrainingManagementForm({ student, divisions, onUpdated, alwaysOpen = fa
 }
 
 function StudentDetails({ id, onClose, onDirtyChange, saveTrigger, onSaveSuccess, onSaveFailure, onDeleteSuccess, inSplitView, source = "approved" }) {
+  const reference = useReferenceData();
   const isApprovedView = source === "approved" && !window.location.pathname.startsWith("/admin/student-management");
   const trainingFormSaveRef = useRef(null);
   const [student, setStudent] = useState(null);
@@ -628,6 +612,13 @@ function StudentDetails({ id, onClose, onDirtyChange, saveTrigger, onSaveSuccess
 
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
+  // Same preserve-current-value rule as TrainingManagementForm above: this form
+  // edits an existing record, so a value retired from the reference collection
+  // must stay visible for the record that still holds it (and for nobody else).
+  const editCourseOptions = withCurrentValue(reference.courses, editForm.course, student?.course);
+  const editBranchOptions = withCurrentValue(reference.branches, editForm.branch, student?.branch);
+  const editYearOptions = withCurrentValue(yearOptions, editForm.year, student?.year);
+  const editStateOptions = withCurrentValue(reference.states, editForm.collegeState, student?.collegeState);
   const [newFiles, setNewFiles] = useState({});
   const [editError, setEditError] = useState("");
   const [courseBranchError, setCourseBranchError] = useState(null);
@@ -1072,7 +1063,7 @@ function StudentDetails({ id, onClose, onDirtyChange, saveTrigger, onSaveSuccess
                 onChange={(e) => handleEditChange("collegeState", e.target.value)}
               >
                 <option value="">Select State</option>
-                {indianStatesAndUnionTerritories.map((s) => (
+                {editStateOptions.map((s) => (
                   <option key={s} value={s}>
                     {s}
                   </option>
@@ -1104,7 +1095,7 @@ function StudentDetails({ id, onClose, onDirtyChange, saveTrigger, onSaveSuccess
                 onChange={(e) => handleEditChange("course", e.target.value)}
               >
                 <option value="">Select Course</option>
-                {courseOptions.map((c) => (
+                {editCourseOptions.map((c) => (
                   <option key={c} value={c}>
                     {c}
                   </option>
@@ -1118,7 +1109,7 @@ function StudentDetails({ id, onClose, onDirtyChange, saveTrigger, onSaveSuccess
                 onChange={(e) => handleEditChange("branch", e.target.value)}
               >
                 <option value="">Select Branch</option>
-                {registeredBranchOptions.map((b) => (
+                {editBranchOptions.map((b) => (
                   <option key={b} value={b}>
                     {b}
                   </option>
@@ -1132,7 +1123,7 @@ function StudentDetails({ id, onClose, onDirtyChange, saveTrigger, onSaveSuccess
                 onChange={(e) => handleEditChange("year", e.target.value)}
               >
                 <option value="">Select Year</option>
-                {yearOptions.map((y) => (
+                {editYearOptions.map((y) => (
                   <option key={y} value={y}>
                     {y}
                   </option>

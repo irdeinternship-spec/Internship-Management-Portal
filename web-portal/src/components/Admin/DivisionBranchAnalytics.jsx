@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { branches } from "../../data/branches";
+import { useReferenceData } from "../../hooks/useReferenceData";
 import { getAllocatedStudents } from "../../utils/administrationAnalytics";
 import StudentDivisionRecommendation from "./StudentDivisionRecommendation";
 
@@ -60,10 +60,19 @@ function PieChart({ data, mode, emptyLabel }) {
 }
 
 export default function DivisionBranchAnalytics({ administration, students, loading, error, onModeChange }) {
+  // Branches are live reference data now - editing them in the admin
+  // Management screen changes this list immediately.
+  const { branches } = useReferenceData();
   const [mode, setMode] = useState("branch");
-  const [selectedBranch, setSelectedBranch] = useState(branches[0] || "");
+  const [selectedBranch, setSelectedBranch] = useState("");
   const [selectedDivision, setSelectedDivision] = useState("");
   const activeDivision = administration.divisions.includes(selectedDivision) ? selectedDivision : administration.divisions[0] || "";
+  // Derived, not seeded into useState: branches now arrive asynchronously, so
+  // `useState(branches[0])` would capture the empty first render and never
+  // update. Falling back to the first branch here also re-selects sensibly if
+  // the chosen branch is deleted from the reference collection while open -
+  // same shape as activeDivision directly above.
+  const activeBranch = branches.includes(selectedBranch) ? selectedBranch : branches[0] || "";
 
   const analyticsStudents = useMemo(() => {
     return students.filter((s) => {
@@ -75,18 +84,18 @@ export default function DivisionBranchAnalytics({ administration, students, load
   const allocated = useMemo(() => getAllocatedStudents(analyticsStudents, administration.divisions), [analyticsStudents, administration.divisions]);
 
   const branchRows = useMemo(() => administration.divisions.map((division) => {
-    const matched = allocated.filter((student) => student.branch === selectedBranch && student.trainingManagement?.division === division);
+    const matched = allocated.filter((student) => student.branch === activeBranch && student.trainingManagement?.division === division);
     const paid = matched.filter(s => (s.internshipType || "").toLowerCase() === "paid").length;
     const unpaid = matched.filter(s => (s.internshipType || "Unpaid").toLowerCase() === "unpaid").length;
     return { label: division, value: matched.length, paid, unpaid };
-  }), [administration.divisions, allocated, selectedBranch]);
+  }), [administration.divisions, allocated, activeBranch]);
 
   const divisionRows = useMemo(() => branches.map((branch) => {
     const matched = allocated.filter((student) => student.trainingManagement?.division === activeDivision && student.branch === branch);
     const paid = matched.filter(s => (s.internshipType || "").toLowerCase() === "paid").length;
     const unpaid = matched.filter(s => (s.internshipType || "Unpaid").toLowerCase() === "unpaid").length;
     return { label: branch, value: matched.length, paid, unpaid };
-  }), [allocated, activeDivision]);
+  }), [allocated, activeDivision, branches]);
 
   const activeRows = mode === "branch" ? branchRows : divisionRows;
 
@@ -103,7 +112,7 @@ export default function DivisionBranchAnalytics({ administration, students, load
     <div className="administration-card__heading"><span className="administration-icon" aria-hidden="true">◔</span><div><h2>Division &amp; Branch Analytics</h2><p>View real-time internship allocation statistics and vacancy insights.</p></div></div>
     <div className="analytics-tabs" role="tablist"><button type="button" role="tab" aria-selected={mode === "branch"} className={mode === "branch" ? "is-active" : ""} onClick={() => { setMode("branch"); onModeChange?.("branch"); }}>Branch Analytics</button><button type="button" role="tab" aria-selected={mode === "division"} className={mode === "division" ? "is-active" : ""} onClick={() => { setMode("division"); onModeChange?.("division"); }}>Division Analytics</button></div>
     {loading ? <div className="analytics-skeleton"><span /><span /><span /></div> : error ? <div className="analytics-empty"><span aria-hidden="true">!</span><p>{error}</p></div> : <>
-      <div className="analytics-selector" aria-label={mode === "branch" ? "Select branch" : "Select division"}>{[...(mode === "branch" ? branches : administration.divisions)].sort((a, b) => a.localeCompare(b)).map((item) => <button type="button" key={item} className={(mode === "branch" ? selectedBranch : activeDivision) === item ? "is-active" : ""} onClick={() => mode === "branch" ? setSelectedBranch(item) : setSelectedDivision(item)}>{item}</button>)}</div>
+      <div className="analytics-selector" aria-label={mode === "branch" ? "Select branch" : "Select division"}>{[...(mode === "branch" ? branches : administration.divisions)].sort((a, b) => a.localeCompare(b)).map((item) => <button type="button" key={item} className={(mode === "branch" ? activeBranch : activeDivision) === item ? "is-active" : ""} onClick={() => mode === "branch" ? setSelectedBranch(item) : setSelectedDivision(item)}>{item}</button>)}</div>
       <div className="analytics-content">
         <div className="analytics-table-wrap">
           <table className="analytics-table">

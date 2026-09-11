@@ -1,8 +1,5 @@
 import { useEffect, useState } from "react";
 
-import { branches } from "../../data/branches";
-import { courses } from "../../data/courses";
-import { indianStatesAndUnionTerritories } from "../../data/states";
 import { years } from "../../data/years";
 
 import { fetchColleges } from "../../services/studentService";
@@ -11,8 +8,18 @@ import SearchableDropdown from "../Inputs/SearchableDropdown";
 import SelectInput from "../Inputs/SelectInput";
 import TextInput from "../Inputs/TextInput";
 
-function AcademicSection({ form, errors, onChange }) {
+// `reference` comes from StudentForm's useReferenceData() - branches, courses
+// and states are live reference data now, not hardcoded lists. StudentForm
+// owns the hook so the loading/error gate is decided once for the whole form
+// rather than independently per section.
+function AcademicSection({ form, errors, onChange, reference }) {
   const [collegeOptions, setCollegeOptions] = useState([]);
+
+  const { branches, courses, states, loading, error } = reference;
+  // A disabled control with an explicit "Loading..." placeholder, never an
+  // empty enabled dropdown: an empty list reads as "there are no branches".
+  const optionsUnavailable = loading || Boolean(error);
+  const placeholderFor = (label) => (loading ? "Loading options..." : error ? "Unavailable" : label);
 
   useEffect(() => {
     async function loadColleges() {
@@ -45,6 +52,8 @@ function AcademicSection({ form, errors, onChange }) {
           onChange={onChange}
           options={courses}
           error={errors.course}
+          disabled={optionsUnavailable}
+          placeholder={placeholderFor("Select")}
           required
         />
 
@@ -55,6 +64,8 @@ function AcademicSection({ form, errors, onChange }) {
           onChange={onChange}
           options={branches}
           error={errors.branch}
+          disabled={optionsUnavailable}
+          placeholder={placeholderFor("Select")}
           required
         />
 
@@ -130,8 +141,10 @@ function AcademicSection({ form, errors, onChange }) {
           name="collegeState"
           value={form.collegeState}
           onChange={onChange}
-          options={indianStatesAndUnionTerritories}
+          options={states}
           error={errors.collegeState}
+          disabled={optionsUnavailable}
+          placeholder={placeholderFor("Search and select")}
           required
         />
       </div>

@@ -30,7 +30,14 @@ async function parseResponse(response) {
   const body = await response.json().catch(() => ({}));
 
   if (response.status === 401) {
+    // clearToken() dispatches "admin-auth-changed", which AdminAuth listens for
+    // and ProtectedRoute turns into a redirect to /admin/login. So an expired
+    // session doesn't just fail the request - it navigates the admin away
+    // mid-action, which is why a failed Delete looked like the button did
+    // nothing at all. The generic backend string ("Admin authentication
+    // required.") gave no hint that the session was the problem.
     handleUnauthorized("admin");
+    throw new Error("Your session has expired. Sign in again and retry.");
   }
 
   if (!response.ok) {
@@ -298,8 +305,8 @@ export async function deleteCollege(id) {
 }
 
 export async function fetchManagementItems(type) { const response = await fetch(`${API_URL}/management/${type}`, { headers: authHeaders() }); return parseResponse(response); }
-export async function addManagementItem(type, name) { const response = await fetch(`${API_URL}/management/${type}`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ name }) }); return parseResponse(response); }
-export async function updateManagementItem(type, id, name) { const response = await fetch(`${API_URL}/management/${type}/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ name }) }); return parseResponse(response); }
+export async function addManagementItem(type, name, level) { const response = await fetch(`${API_URL}/management/${type}`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(level ? { name, level } : { name }) }); return parseResponse(response); }
+export async function updateManagementItem(type, id, name, level) { const response = await fetch(`${API_URL}/management/${type}/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(level ? { name, level } : { name }) }); return parseResponse(response); }
 export async function deleteManagementItem(type, id) { const response = await fetch(`${API_URL}/management/${type}/${id}`, { method: "DELETE", headers: authHeaders() }); return parseResponse(response); }
 
 export async function changeAdminPassword(payload) {

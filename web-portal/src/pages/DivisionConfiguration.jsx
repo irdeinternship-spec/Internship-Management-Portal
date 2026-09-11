@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { branches } from "../data/branches";
+import { useReferenceData } from "../hooks/useReferenceData";
 import { fetchDivisionConfigurations, saveDivisionConfigurations } from "../services/adminService";
 import { calculateTotalVacancy } from "../utils/administrationAnalytics";
 import "../styles/admin.css";
@@ -7,6 +7,9 @@ import "../styles/admin.css";
 const blankConfiguration = () => ({ allowedBranches: [], totalVacancy: 0, branchSeats: {} });
 
 function DivisionConfiguration() {
+  // Branches are live reference data now - editing them in the admin
+  // Management screen changes this list immediately.
+  const { branches } = useReferenceData();
   const [divisions, setDivisions] = useState([]);
   const [configurations, setConfigurations] = useState({});
   const [loading, setLoading] = useState(true);
