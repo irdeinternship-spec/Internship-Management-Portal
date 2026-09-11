@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { submitStudentRegistration } from "../../services/studentService";
 import { useReferenceData } from "../../hooks/useReferenceData";
-import AcademicSection from "./AcademicSection";
+import AcademicSection, { BRANCH_CODES } from "./AcademicSection";
 import AddressSection from "./AddressSection";
 import DocumentForm from "./DocumentForm";
 import ParentSection from "./ParentSection";
@@ -14,6 +14,7 @@ const initialForm = {
   gender: "",
   course: "",
   branch: "",
+  branchCode: "",
   currentYear: "",
   phone: "",
   email: "",
@@ -42,6 +43,24 @@ const initialForm = {
   aadhaarCard: null,
   internshipType: window.location.pathname.includes("paid-internship") ? "Paid" : "Unpaid",
 };
+
+// Mirrors the server rules in backend/controllers/studentController.js.
+// Frontend validation alone is bypassable, so these exist to give a fast,
+// field-level message - the API rejects the same cases with 400.
+const MAX_AGE_YEARS = 28;
+const MIN_CGPA = 7.5;
+
+// Whole years completed as of `asOf`, by calendar date rather than a
+// millisecond division, which drifts across leap years. Measured on the
+// application date.
+function ageInYears(dateOfBirth, asOf = new Date()) {
+  const dob = new Date(dateOfBirth);
+  if (Number.isNaN(dob.getTime())) return NaN;
+  let age = asOf.getFullYear() - dob.getFullYear();
+  const monthDelta = asOf.getMonth() - dob.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && asOf.getDate() < dob.getDate())) age -= 1;
+  return age;
+}
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -73,6 +92,7 @@ function validateStepOne(form, validStates) {
     "gender",
     "course",
     "branch",
+    "branchCode",
     "currentYear",
     "phone",
     "email",
@@ -100,6 +120,9 @@ function validateStepOne(form, validStates) {
   }
   if (form.email && !emailPattern.test(form.email)) errors.email = "Enter a valid email address.";
   if (form.dob && new Date(form.dob) > new Date()) errors.dob = "Date of birth cannot be in the future.";
+  else if (form.dob && ageInYears(form.dob) > MAX_AGE_YEARS) {
+    errors.dob = `Applicants must be ${MAX_AGE_YEARS} years or younger.`;
+  }
   if (form.aadhaarNumber && !/^\d{12}$/.test(form.aadhaarNumber)) {
     errors.aadhaarNumber = "Aadhaar Number must contain exactly 12 digits.";
   }
@@ -113,6 +136,12 @@ function validateStepOne(form, validStates) {
   const cgpa = Number(form.cgpa);
   if (form.cgpa && (Number.isNaN(cgpa) || cgpa < 0 || cgpa > 10)) {
     errors.cgpa = "CGPA must be between 0 and 10.";
+  } else if (form.cgpa && cgpa < MIN_CGPA) {
+    errors.cgpa = `Minimum required CGPA is ${MIN_CGPA}.`;
+  }
+
+  if (form.branchCode && !BRANCH_CODES.includes(form.branchCode)) {
+    errors.branchCode = `Select a valid branch code (${BRANCH_CODES.join(", ")}).`;
   }
 
   return errors;

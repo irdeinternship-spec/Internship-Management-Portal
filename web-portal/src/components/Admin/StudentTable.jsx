@@ -49,6 +49,9 @@ function StudentTable({
             <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => handleHeaderClick("branch")}>
               Branch{renderSortArrow("branch")}
             </th>
+            <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => handleHeaderClick("branchCode")}>
+              Branch Code{renderSortArrow("branchCode")}
+            </th>
             <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => handleHeaderClick("division")}>
               Division{renderSortArrow("division")}
             </th>

@@ -152,6 +152,9 @@ function AdminDashboard() {
   const [students, setStudents] = useState([]);
   const [allStudents, setAllStudents] = useState([]);
   const [isExportingApplications, setIsExportingApplications] = useState(false);
+  // Which students to export. Asked before the download starts, rather than
+  // exporting everything and leaving the admin to filter the sheet.
+  const [exportScopePrompt, setExportScopePrompt] = useState(false);
   const [summary, setSummary] = useState({});
   const [administration, setAdministration] = useState(null);
   const [search, setSearch] = useState(() => {
@@ -2406,17 +2409,7 @@ function AdminDashboard() {
               <button
                 className="admin-secondary-btn"
                 type="button"
-                onClick={async () => {
-                  try {
-                    setIsExportingApplications(true);
-                    await exportApplicationsExcel();
-                  } catch (err) {
-                    console.error("Export applications failed:", err);
-                    alert(err.message || "Failed to export applications.");
-                  } finally {
-                    setIsExportingApplications(false);
-                  }
-                }}
+                onClick={() => setExportScopePrompt(true)}
                 disabled={isExportingApplications}
                 style={{ display: "inline-flex", alignItems: "center", gap: "6px", height: "36px", padding: "0 16px" }}
               >
@@ -2645,6 +2638,45 @@ function AdminDashboard() {
       )}
 
       {/* VIEW 3: Approved Students View (Original application table) */}
+      {exportScopePrompt && (
+        <div className="certificate-modal-backdrop" role="dialog" aria-modal="true" aria-label="Export to Excel">
+          <section className="certificate-modal">
+            <h2>Export to Excel</h2>
+            <p className="admin-muted">Which students should the spreadsheet include?</p>
+            <div className="admin-actions-row">
+              {[["approved", "Approved"], ["rejected", "Rejected"], ["all", "All"]].map(([scope, label]) => (
+                <button
+                  key={scope}
+                  className={scope === "all" ? "admin-secondary-btn" : "admin-primary-btn"}
+                  type="button"
+                  disabled={isExportingApplications}
+                  onClick={async () => {
+                    try {
+                      setIsExportingApplications(true);
+                      await exportApplicationsExcel(scope);
+                      setExportScopePrompt(false);
+                    } catch (err) {
+                      console.error("Export applications failed:", err);
+                      alert(err.message || "Failed to export applications.");
+                    } finally {
+                      setIsExportingApplications(false);
+                    }
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="admin-actions-row">
+              <button className="admin-secondary-btn" type="button" disabled={isExportingApplications} onClick={() => setExportScopePrompt(false)}>
+                Cancel
+              </button>
+            </div>
+            {isExportingApplications && <p className="admin-muted">Exporting...</p>}
+          </section>
+        </div>
+      )}
+
       {currentView === "approved-students" && (
         <>
           <DashboardCards summary={{ approvedStudents: students.length }} />

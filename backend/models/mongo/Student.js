@@ -27,6 +27,10 @@ const studentSchema = new Schema(
     gender: { type: String, default: "" },
     course: String,
     branch: { type: String, index: true },
+    // Student-selected, required at registration. Deliberately NOT derived from
+    // `branch`: the mapping is many-to-one (several branches share a code), so
+    // it is its own field with its own enum rather than something inferred.
+    branchCode: { type: String, enum: ["EE", "ME", "CS", "PH"], index: true },
     year: { type: String, index: true },
     phone: { type: String, index: true },
     email: { type: String, index: true }, // no unique constraint in Postgres, and not made unique here either - students can legitimately reapply

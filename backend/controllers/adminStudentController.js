@@ -223,7 +223,7 @@ async function getStudents(req, res) {
     const filter = buildStudentFilter(req.query);
     const sort = buildSort(req.query.sortBy, req.query.sortOrder);
     const projection =
-      "_id referenceId name gender dob course collegeName location email phone branch year cgpa submittedAt status recommendedBy trainingManagement offerLetterStatus approvedDate certificateGenerated gyapanGenerated internshipType completedStatus bankDetails paidInternshipProjectDetails firstQuarterReport secondQuarterReport";
+      "_id referenceId name gender dob course collegeName location email phone branch branchCode year cgpa submittedAt status recommendedBy trainingManagement offerLetterStatus approvedDate certificateGenerated gyapanGenerated internshipType completedStatus bankDetails paidInternshipProjectDetails firstQuarterReport secondQuarterReport";
 
     const [
       students,
@@ -1218,9 +1218,20 @@ module.exports = {
 
 async function exportApplications(req, res) {
   try {
-    const { generateApplicationsWorkbook } = require("../services/applicationExportService");
+    const { generateApplicationsWorkbook, resolveStatusFilter } = require("../services/applicationExportService");
+    const scope = String(req.query.scope || "all").toLowerCase();
+
+    // Validated before any header is sent, so an unknown scope returns real
+    // JSON rather than a 400 body inside a .xlsx attachment.
+    if (!resolveStatusFilter(scope)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Choose an export scope: "approved", "rejected", or "all".',
+      });
+    }
+
     const today = new Date().toISOString().slice(0, 10);
-    const filename = `applications-${today}.xlsx`;
+    const filename = `applications-${scope}-${today}.xlsx`;
 
     res.setHeader(
       "Content-Type",
@@ -1231,13 +1242,13 @@ async function exportApplications(req, res) {
       `attachment; filename="${filename}"`
     );
 
-    const { workbook, count } = await generateApplicationsWorkbook();
+    const { workbook, count, label } = await generateApplicationsWorkbook(scope);
 
     await logActivity({
       req,
       module: "Student Module",
       action: "Exported Applications",
-      description: `Exported ${count} student application(s) as Excel (.xlsx).`,
+      description: `Exported ${count} ${label} student application(s) as Excel (.xlsx).`,
       status: "Success",
     });
 

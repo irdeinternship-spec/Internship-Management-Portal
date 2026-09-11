@@ -11,10 +11,34 @@ function formatExportDate(value) {
   return `${day}-${month}-${year}`;
 }
 
+// The three status values Student.status actually holds. Read from the live
+// collection rather than assumed - the stored strings are capitalised
+// ("Approved"/"Rejected"/"Pending"), not lowercase, and the schema declares no
+// enum (models/mongo/Student.js only sets default:"Pending"), so these are the
+// values the data uses, not a contract it enforces.
+const STATUS_FILTERS = {
+  approved: { label: "approved", query: { status: "Approved" } },
+  rejected: { label: "rejected", query: { status: "Rejected" } },
+  all: { label: "all", query: {} },
+};
+
+function resolveStatusFilter(scope) {
+  return STATUS_FILTERS[String(scope || "all").toLowerCase()] || null;
+}
+
 /**
  * Builds and returns the standardized ExcelJS workbook for student applications.
+ *
+ * `scope` is one of "approved" | "rejected" | "all" (default "all").
  */
-async function generateApplicationsWorkbook() {
+async function generateApplicationsWorkbook(scope = "all") {
+  const filter = resolveStatusFilter(scope);
+  if (!filter) {
+    const error = new Error(`Unknown export scope "${scope}". Choose approved, rejected, or all.`);
+    error.statusCode = 400;
+    throw error;
+  }
+
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "DRDO Admin Portal";
   workbook.created = new Date();
@@ -30,8 +54,12 @@ async function generateApplicationsWorkbook() {
     { header: "Phone", key: "phone", width: 16 },
     { header: "College", key: "college", width: 35 },
     { header: "Branch", key: "branch", width: 24 },
+    { header: "Branch Code", key: "branchCode", width: 14 },
     { header: "Division Allotted", key: "division", width: 24 },
     { header: "Seat Number", key: "seatNumber", width: 16 },
+    // numFmt + a real Number below: written as a NUMBER, so Excel can sort and
+    // average it. A string here would sort lexically ("10" before "9").
+    { header: "CGPA", key: "cgpa", width: 10, style: { numFmt: "0.00" } },
     { header: "Status", key: "status", width: 15 },
     { header: "Submitted Date", key: "submittedDate", width: 18 },
     { header: "Approval Date", key: "approvalDate", width: 18 },
@@ -47,7 +75,7 @@ async function generateApplicationsWorkbook() {
   headerRow.alignment = { vertical: "middle", horizontal: "center" };
   headerRow.height = 26;
 
-  const students = await Student.find({}).sort({ submittedAt: -1, createdAt: -1 });
+  const students = await Student.find(filter.query).sort({ submittedAt: -1, createdAt: -1 });
 
   for (const student of students) {
     const row = worksheet.addRow({
@@ -57,6 +85,7 @@ async function generateApplicationsWorkbook() {
       phone: student.phone || "-",
       college: student.collegeName || "-",
       branch: student.branch || "-",
+      branchCode: student.branchCode || "-",
       division:
         student.trainingManagement?.division ||
         student.recommendedBy ||
@@ -67,6 +96,9 @@ async function generateApplicationsWorkbook() {
         student.trainingManagement?.seatNumber ||
         student.seatNumber ||
         "-",
+      // Number, not a formatted string. null (not "-") when absent, so the cell
+      // is genuinely empty rather than text that would break the column's type.
+      cgpa: Number.isFinite(student.cgpa) ? student.cgpa : null,
       status: student.status || "Pending",
       submittedDate: formatExportDate(student.submittedAt || student.createdAt),
       approvalDate: formatExportDate(student.approvedDate),
@@ -74,9 +106,10 @@ async function generateApplicationsWorkbook() {
     row.alignment = { vertical: "middle" };
   }
 
-  return { workbook, count: students.length };
+  return { workbook, count: students.length, label: filter.label };
 }
 
 module.exports = {
   generateApplicationsWorkbook,
+  resolveStatusFilter,
 };

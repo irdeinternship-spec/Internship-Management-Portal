@@ -126,6 +126,7 @@ function StudentFullProfile() {
         rows={[
           ["Course", student.course],
           ["Branch", student.branch],
+          ["Branch Code", student.branchCode],
           ["Year", student.year],
           ["CGPA", student.cgpa],
         ]}

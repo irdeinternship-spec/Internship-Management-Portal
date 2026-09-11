@@ -16,6 +16,7 @@ const requiredFields = [
   "gender",
   "course",
   "branch",
+  "branchCode",
   "currentYear",
   "phone",
   "email",
@@ -37,6 +38,22 @@ const requiredFields = [
   "permissionLetterNumber",
   "permissionLetterDate",
 ];
+
+const BRANCH_CODES = ["EE", "ME", "CS", "PH"];
+const MAX_AGE_YEARS = 28;
+const MIN_CGPA = 7.5;
+
+// Whole years completed as of `asOf`, by calendar date - not a millisecond
+// division, which drifts across leap years. Age is measured on the application
+// date, so `asOf` defaults to now.
+function ageInYears(dateOfBirth, asOf = new Date()) {
+  const dob = new Date(dateOfBirth);
+  if (Number.isNaN(dob.getTime())) return NaN;
+  let age = asOf.getFullYear() - dob.getFullYear();
+  const monthDelta = asOf.getMonth() - dob.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && asOf.getDate() < dob.getDate())) age -= 1;
+  return age;
+}
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -98,6 +115,7 @@ function validateRequest(body, files) {
       name: "Student Name",
       course: "Course",
       branch: "Branch",
+      branchCode: "Branch Code",
       phone: "Phone Number",
       email: "Email Address",
       dob: "Date of Birth",
@@ -131,6 +149,10 @@ function validateRequest(body, files) {
     return "Date of birth cannot be in the future.";
   }
 
+  if (ageInYears(body.dob) > MAX_AGE_YEARS) {
+    return `Applicants must be ${MAX_AGE_YEARS} years or younger.`;
+  }
+
   if (body.internshipType !== "Paid" && !/^\d{4}-\d{2}$/.test(body.internshipJoiningMonth || "")) {
     return "Select a valid internship joining month.";
   }
@@ -143,6 +165,14 @@ function validateRequest(body, files) {
 
   if (Number.isNaN(cgpa) || cgpa < 0 || cgpa > 10) {
     return "CGPA must be between 0 and 10.";
+  }
+
+  if (cgpa < MIN_CGPA) {
+    return `Minimum required CGPA is ${MIN_CGPA}.`;
+  }
+
+  if (!BRANCH_CODES.includes(body.branchCode)) {
+    return `Select a valid branch code (${BRANCH_CODES.join(", ")}).`;
   }
 
   if (!indianStatesAndUnionTerritories.includes(body.collegeState)) {
@@ -265,6 +295,7 @@ async function createStudent(req, res) {
       gender: req.body.gender,
       course: req.body.course,
       branch: req.body.branch,
+      branchCode: req.body.branchCode,
       year: req.body.currentYear,
 
       phone: req.body.phone,

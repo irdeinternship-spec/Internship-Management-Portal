@@ -303,6 +303,9 @@ async function main() {
       gender: "Male",
       course: "B.Tech",
       branch: "Computer Science and Engineering",
+      // Required as of the Branch Code change; the API rejects a registration
+      // without one, and every downstream test depends on this student existing.
+      branchCode: "CS",
       currentYear: "3rd Year",
       phone: `98${suffix}`.padEnd(10, "0").slice(0, 10),
       email: state.newStudentEmail,

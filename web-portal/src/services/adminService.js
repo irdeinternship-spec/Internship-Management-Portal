@@ -470,8 +470,8 @@ export async function createPdfUrl(response) {
   return createDocumentUrl(blob);
 }
 
-export async function exportApplicationsExcel() {
-  const response = await fetch(`${API_URL}/applications/export`, {
+export async function exportApplicationsExcel(scope = "all") {
+  const response = await fetch(`${API_URL}/applications/export?scope=${encodeURIComponent(scope)}`, {
     headers: authHeaders(),
     credentials: "include",
   });
@@ -483,7 +483,7 @@ export async function exportApplicationsExcel() {
   }
 
   const disposition = response.headers.get("Content-Disposition");
-  let filename = `applications-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  let filename = `applications-${scope}-${new Date().toISOString().slice(0, 10)}.xlsx`;
   if (disposition && disposition.includes("filename=")) {
     const match = disposition.match(/filename="?([^"]+)"?/);
     if (match && match[1]) filename = match[1];
