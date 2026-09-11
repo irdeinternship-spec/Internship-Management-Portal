@@ -87,7 +87,26 @@ administrationSchema.statics.getAdministration = async function getAdministratio
     { upsert: true, new: true }
   );
 
-  const value = doc.toObject();
+  // flattenMaps:true is LOAD-BEARING, not a formatting preference.
+  //
+  // divisionConfigurations (and branchSeats inside each entry) are declared as
+  // Mongoose Maps. A bare toObject() returns them as real JavaScript Map
+  // instances, and the normalisation loop below reads them with BRACKET
+  // notation - `value.divisionConfigurations[division]` - which is always
+  // undefined on a Map. Every entry therefore read as absent and was rewritten
+  // to the empty default, so the normaliser that exists to sanitise the config
+  // silently erased it on every read.
+  //
+  // The data was always written correctly; only the read was broken. The
+  // visible symptoms were that validateDivisionCapacity() rejected every
+  // allocation with "No seats are configured for <branch> in <division>", and
+  // that the Division Configuration screen always rendered blank - so saving it
+  // wrote that blank back over whatever was stored.
+  //
+  // Introduced by the Postgres->Mongo migration: this normalisation block was
+  // ported verbatim from services/administrationService.js, where the value
+  // came from a JSONB column and really was a plain object.
+  const value = doc.toObject({ flattenMaps: true });
   value.divisions = [...(value.divisions || [])].sort((left, right) => left.localeCompare(right));
   value.divisionConfigurations = value.divisionConfigurations || {};
 

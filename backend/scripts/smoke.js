@@ -11,10 +11,19 @@
  * PASS/FAIL/SKIP per route, and exits non-zero if anything unexpectedly
  * failed.
  *
- * Requires: the server running (npm start / npm run dev) against a DB that
- * has already been seeded (npm run seed) - several routes depend on the
- * seeded reference data (courses/branches) and the seeded Approved sample
- * students existing.
+ * Requires: the server running via `npm run start:test` - which points it at
+ * the TEST database and TEST R2 bucket. This script then resets and seeds that
+ * database itself, so it needs no pre-existing data and no pre-existing
+ * credentials.
+ *
+ * THIS SCRIPT IS DESTRUCTIVE. It drops its target database and empties its
+ * target R2 bucket before every run. It used to run against whatever
+ * MONGODB_URI pointed at - production - and left orphaned students behind
+ * whenever a run failed before its cleanup step. It now refuses to start
+ * unless MONGODB_URI_TEST names a database that is genuinely different from
+ * MONGODB_URI, and unless R2_TEST_BUCKET is a different bucket from R2_BUCKET
+ * (with its own scoped credentials, so this path cannot address production
+ * files at all). See config/testEnvironment.js.
  *
  * Some routes are expected to fail or be skipped in a fresh/local
  * environment (no S3/MinIO configured, EMAIL_ENABLED=false, no admin
@@ -23,8 +32,11 @@
  * "expected failure" notes inline.
  */
 
-require("dotenv").config();
+require("dotenv").config({ quiet: true });
+const crypto = require("crypto");
 const mongoose = require("mongoose");
+const { purgeTestBucket, requireTestBucket, requireTestDatabaseUri } = require("../config/testEnvironment");
+const { seedAll } = require("./seed");
 const Student = require("../models/mongo/Student");
 const Gyapan = require("../models/mongo/Gyapan");
 const Admin = require("../models/mongo/Admin");
@@ -168,7 +180,11 @@ const state = {
   seededDivisionStudentId: null, // SEED004 (has trainingManagement.division set)
   seededCompletedId: null, // SEED005 (Approved, completedStatus Yes)
   gyapanId: null,
-  originalAdminPassword: process.env.MAIN_ADMIN_INITIAL_PASSWORD,
+  // Generated per run and seeded into the throwaway database by this script,
+  // so the suite depends on no credential stored anywhere and cannot be broken
+  // by a password change on the real admin account.
+  adminEmail: process.env.MAIN_ADMIN_EMAIL || "smoke.admin@example.com",
+  adminPassword: `Smoke!${crypto.randomBytes(12).toString("hex")}`,
 };
 
 async function findSeededStudentId(referenceId) {
@@ -177,11 +193,76 @@ async function findSeededStudentId(referenceId) {
   return match ? match.id || match._id : null;
 }
 
+// Proves the server under test is talking to the TEST database, not production.
+//
+// No new endpoint and no database name exposed on /api/health: the admin below
+// was just seeded into the test database with a password generated seconds ago,
+// so it exists nowhere else. If this login succeeds, the server is on the test
+// database. If it fails, it isn't - and aborting here with that one sentence is
+// far more useful than letting 60+ admin-authenticated tests cascade into
+// indistinguishable 401s, which is what made the previous failure hard to read.
+// Empties every collection rather than dropping the database: the Atlas user
+// has readWrite on this database but not dbAdmin, so dropDatabase() is denied
+// ("user is not allowed to do action [dropDatabase]"). deleteMany({}) needs
+// only write access and reaches the same starting state - it leaves indexes in
+// place, which is harmless here and marginally faster than rebuilding them.
+//
+// Safe because main() has already proven, via requireTestDatabaseUri(), that
+// this connection is NOT the production database.
+async function clearTestDatabase() {
+  const collections = await mongoose.connection.db.listCollections().toArray();
+  await Promise.all(
+    collections.map((collection) => mongoose.connection.db.collection(collection.name).deleteMany({}))
+  );
+  return collections.length;
+}
+
+async function assertServerIsOnTestDatabase() {
+  const response = await fetch(`${BASE}/admin/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: state.adminEmail, password: state.adminPassword }),
+  });
+
+  if (response.status !== 200) {
+    throw new Error(
+      `The server at ${BASE} is NOT connected to the test database.\n` +
+        `  This script just seeded a throwaway admin into the test database, and the\n` +
+        `  server rejected it (HTTP ${response.status}) - so the server is pointed somewhere\n` +
+        `  else, almost certainly production.\n` +
+        `  Start it with:  npm run start:test`
+    );
+  }
+}
+
 async function main() {
+  // Guards first: nothing touches the network or a database until both the
+  // test database and the test bucket have been resolved and proven distinct
+  // from their production counterparts.
+  const database = requireTestDatabaseUri();
+  const { bucket } = requireTestBucket();
+
+  console.log(`Target database : ${database.host}/${database.database}`);
+  console.log(`Target R2 bucket: ${bucket}`);
+  console.log("");
+
   // Separate connection from the server's own - this script does its own
   // independent reads for assertPersisted(), deliberately not trusting
   // anything the app process itself reports.
-  await mongoose.connect(process.env.MONGODB_URI);
+  await mongoose.connect(database.uri);
+
+  // Reset to a deterministic starting state. The suite used to be explicitly
+  // NOT repeatable against a persistent cluster (see the forgot-password note
+  // below, which documented exactly that); owning a throwaway database removes
+  // the problem instead of working around it.
+  console.log("Resetting test environment...");
+  const cleared = await clearTestDatabase();
+  const purged = await purgeTestBucket();
+  console.log(`  cleared ${cleared} collection(s), emptied bucket (${purged.deleted} object(s))`);
+  await seedAll({ mainAdminEmail: state.adminEmail, mainAdminPassword: state.adminPassword });
+  console.log("");
+
+  await assertServerIsOnTestDatabase();
 
   // ======================================================================
   section("Public / unauthenticated");
@@ -192,6 +273,25 @@ async function main() {
     expect(status === 200, `expected 200, got ${status}`);
     expect(Array.isArray(data), "expected a raw array response");
     expect(data.length > 0, "expected seeded colleges to be present - did you run `npm run seed`?");
+  });
+
+  await t("GET /reference (public, unauthenticated)", async () => {
+    const { status, data } = await req("GET", "/reference");
+    expect(status === 200, `expected 200, got ${status}`);
+    for (const key of ["branches", "courses", "durations", "states"]) {
+      expect(Array.isArray(data[key]), `expected ${key} to be an array`);
+      expect(data[key].length > 0, `expected non-empty ${key} - did you run \`npm run seed\`?`);
+      expect(
+        data[key].every((item) => item.id !== undefined && typeof item.name === "string"),
+        `expected every ${key} entry to be shaped { id, name }`
+      );
+    }
+    // Course.level is required, so every course must carry one - the public
+    // endpoint is where the next change reads it from.
+    expect(
+      data.courses.every((course) => ["undergraduate", "postgraduate"].includes(course.level)),
+      `every course needs a level - run \`npm run migrate:courses\`: ${JSON.stringify(data.courses)}`
+    );
   });
 
   await attemptTest("POST /students (register a new student)", async () => {
@@ -258,13 +358,10 @@ async function main() {
   });
 
   await t("POST /admin/auth/login (seeded Main Admin)", async () => {
-    const email = process.env.MAIN_ADMIN_EMAIL;
-    const password = state.originalAdminPassword;
-    expect(email && password, "MAIN_ADMIN_EMAIL / MAIN_ADMIN_INITIAL_PASSWORD must be set in .env");
     const res = await fetch(`${BASE}/admin/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email: state.adminEmail, password: state.adminPassword }),
     });
     const data = await res.json();
     expect(res.status === 200, `expected 200, got ${res.status}: ${JSON.stringify(data)}`);
@@ -273,7 +370,7 @@ async function main() {
   });
 
   await t("GET /admin/auth/forgot-password-questions (before recovery is configured, or already configured from a prior smoke run)", async () => {
-    const { status } = await req("GET", `/admin/auth/forgot-password-questions?email=${process.env.MAIN_ADMIN_EMAIL}`);
+    const { status } = await req("GET", `/admin/auth/forgot-password-questions?email=${state.adminEmail}`);
     // This hits the real seeded (persistent) admin account, not a fresh
     // throwaway one. The setup-recovery test later in this same run always
     // sets a secretQuestion and never unsets it, so on a repeat run of this
@@ -292,7 +389,7 @@ async function main() {
   await t("GET /admin/auth/me", async () => {
     const { status, data } = await req("GET", "/admin/auth/me", { cookie: state.adminCookie });
     expect(status === 200, `expected 200, got ${status}`);
-    expect(data.admin?.email === process.env.MAIN_ADMIN_EMAIL, "expected the logged-in admin's email back");
+    expect(data.admin?.email === state.adminEmail, "expected the logged-in admin's email back");
   });
 
   await t("GET /admin/profile (main-admin only)", async () => {
@@ -310,7 +407,7 @@ async function main() {
   });
 
   await t("GET /admin/auth/forgot-password-questions (after recovery configured -> expected 200)", async () => {
-    const { status, data } = await req("GET", `/admin/auth/forgot-password-questions?email=${process.env.MAIN_ADMIN_EMAIL}`);
+    const { status, data } = await req("GET", `/admin/auth/forgot-password-questions?email=${state.adminEmail}`);
     expect(status === 200, `expected 200, got ${status}`);
     expect(Array.isArray(data.questions) && data.questions.length > 0, "expected at least one question");
   });
@@ -341,7 +438,7 @@ async function main() {
 
   await t("POST /admin/auth/reset-password-recovery (dead code path - birthPlace/birthDate never set anywhere in the app)", async () => {
     const { status } = await req("POST", "/admin/auth/reset-password-recovery", {
-      body: { email: process.env.MAIN_ADMIN_EMAIL, birthPlace: "x", birthDate: "2000-01-01", newPassword: "Whatever123", confirmPassword: "Whatever123" },
+      body: { email: state.adminEmail, birthPlace: "x", birthDate: "2000-01-01", newPassword: "Whatever123", confirmPassword: "Whatever123" },
     });
     // Originally expected this to 400 (a clean "invalid recovery info"
     // rejection). Running it for real revealed it's actually worse: since
@@ -361,24 +458,24 @@ async function main() {
     const tempPassword = "SmokeTemp1234!";
     const first = await req("PUT", "/admin/change-password", {
       cookie: state.adminCookie,
-      body: { oldPassword: state.originalAdminPassword, newPassword: tempPassword, confirmPassword: tempPassword },
+      body: { oldPassword: state.adminPassword, newPassword: tempPassword, confirmPassword: tempPassword },
     });
     expect(first.status === 200, `expected 200, got ${first.status}: ${JSON.stringify(first.data)}`);
 
     const second = await req("PUT", "/admin/change-password", {
       cookie: state.adminCookie,
-      body: { oldPassword: tempPassword, newPassword: state.originalAdminPassword, confirmPassword: state.originalAdminPassword },
+      body: { oldPassword: tempPassword, newPassword: state.adminPassword, confirmPassword: state.adminPassword },
     });
     expect(second.status === 200, `expected password to be restored, got ${second.status}: ${JSON.stringify(second.data)}`);
   });
 
   await t("POST /admin/auth/reset-password-questions + PUT /admin/change-password (round-trip via recovery flow)", async () => {
-    const list = await req("GET", `/admin/auth/forgot-password-questions?email=${process.env.MAIN_ADMIN_EMAIL}`);
+    const list = await req("GET", `/admin/auth/forgot-password-questions?email=${state.adminEmail}`);
     const questionId = list.data.questions[0].id;
     const tempPassword = "SmokeRecoveryTemp1!";
     const reset = await req("POST", "/admin/auth/reset-password-questions", {
       body: {
-        email: process.env.MAIN_ADMIN_EMAIL,
+        email: state.adminEmail,
         answers: [{ id: questionId, answer: "smoke-answer" }],
         newPassword: tempPassword,
         confirmPassword: tempPassword,
@@ -391,14 +488,14 @@ async function main() {
     const loginRes = await fetch(`${BASE}/admin/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: process.env.MAIN_ADMIN_EMAIL, password: tempPassword }),
+      body: JSON.stringify({ email: state.adminEmail, password: tempPassword }),
     });
     expect(loginRes.status === 200, "expected to log in with the recovery-reset temp password");
     state.adminCookie = extractCookie(loginRes);
 
     const restore = await req("PUT", "/admin/change-password", {
       cookie: state.adminCookie,
-      body: { oldPassword: tempPassword, newPassword: state.originalAdminPassword, confirmPassword: state.originalAdminPassword },
+      body: { oldPassword: tempPassword, newPassword: state.adminPassword, confirmPassword: state.adminPassword },
     });
     expect(restore.status === 200, "expected to restore the original admin password");
   });
@@ -486,9 +583,20 @@ async function main() {
 
   let createdManagementItem = null;
   await t("POST /admin/management/courses (create)", async () => {
-    const { status, data } = await req("POST", "/admin/management/courses", { cookie: state.adminCookie, body: { name: `Smoke Course ${Date.now()}` } });
+    const { status, data } = await req("POST", "/admin/management/courses", { cookie: state.adminCookie, body: { name: `Smoke Course ${Date.now()}`, level: "postgraduate" } });
     expect(status === 201, `expected 201, got ${status}: ${JSON.stringify(data)}`);
+    expect(data.item.level === "postgraduate", `expected the created course to echo its level, got ${JSON.stringify(data.item)}`);
     createdManagementItem = data.item.id;
+  });
+
+  await t("POST /admin/management/courses without level (expected 400)", async () => {
+    const { status } = await req("POST", "/admin/management/courses", { cookie: state.adminCookie, body: { name: `Smoke Levelless ${Date.now()}` } });
+    expect(status === 400, `expected 400, got ${status}`);
+  });
+
+  await t("POST /admin/management/branches with a level (expected 400)", async () => {
+    const { status } = await req("POST", "/admin/management/branches", { cookie: state.adminCookie, body: { name: `Smoke Branch ${Date.now()}`, level: "undergraduate" } });
+    expect(status === 400, `expected 400, got ${status}`);
   });
 
   await t("PATCH /admin/management/courses/:id (rename)", async () => {
@@ -546,11 +654,56 @@ async function main() {
   });
 
   await t("PUT /admin/administration/division-configurations", async () => {
+    // Must send EVERY division: the endpoint is a full replace and now rejects
+    // a partial payload rather than silently clearing the divisions it omits.
+    // This test used to send exactly one, modelling the destructive save it was
+    // supposed to be guarding against.
+    const current = await req("GET", "/admin/administration/division-configurations", { cookie: state.adminCookie });
+    const configurations = { ...current.data.configurations };
+    configurations["Servo System"] = {
+      allowedBranches: ["Computer Science and Engineering"],
+      branchSeats: { "Computer Science and Engineering": { paid: 5, unpaid: 5 } },
+    };
+
     const { status } = await req("PUT", "/admin/administration/division-configurations", {
       cookie: state.adminCookie,
-      body: { configurations: { "Servo System": { allowedBranches: ["Computer Science and Engineering"], branchSeats: { "Computer Science and Engineering": { paid: 5, unpaid: 5 } } } } },
+      body: { configurations },
     });
     expect(status === 200, `expected 200, got ${status}`);
+
+    // READ-BACK. A 200 here is not proof of anything: division configuration
+    // was unreadable for the entire life of the Mongo migration
+    // (models/mongo/Administration.js read a Mongoose Map with bracket
+    // notation, so every entry normalised to empty) and this test stayed green
+    // throughout, because it only ever asserted the status code.
+    const Administration = require("../models/mongo/Administration");
+    const fresh = await Administration.getAdministration();
+    const servo = fresh.divisionConfigurations["Servo System"];
+    expect(
+      servo?.allowedBranches?.includes("Computer Science and Engineering"),
+      `persistence check failed: Servo System allowedBranches - fresh read shows ${JSON.stringify(servo)}`
+    );
+    expect(
+      servo?.branchSeats?.["Computer Science and Engineering"]?.paid === 5 &&
+        servo?.branchSeats?.["Computer Science and Engineering"]?.unpaid === 5,
+      `persistence check failed: Servo System branchSeats - fresh read shows ${JSON.stringify(servo?.branchSeats)}`
+    );
+  });
+
+  await t("PUT /admin/administration/division-configurations with a partial payload (expected 400)", async () => {
+    const { status } = await req("PUT", "/admin/administration/division-configurations", {
+      cookie: state.adminCookie,
+      body: { configurations: { "Servo System": { allowedBranches: [], branchSeats: {} } } },
+    });
+    expect(status === 400, `expected 400 (payload omits every other division), got ${status}`);
+
+    // And prove the refusal was actually non-destructive.
+    const Administration = require("../models/mongo/Administration");
+    const fresh = await Administration.getAdministration();
+    expect(
+      fresh.divisionConfigurations["Servo System"]?.allowedBranches?.length === 1,
+      "a rejected partial save must not have modified anything"
+    );
   });
 
   await t("PATCH /admin/administration/proforma", async () => {
@@ -704,7 +857,17 @@ async function main() {
   await guardedTest("POST /offer-letter/:studentId/send (needs EMAIL_ENABLED=true and MinIO/S3 configured)", Boolean(state.newStudentId), async () => {
     const { status, data } = await req("POST", `/offer-letter/${state.newStudentId}/send`, { cookie: state.adminCookie });
     if (process.env.EMAIL_ENABLED !== "true") {
-      expect(status !== 200, "expected this route to fail when EMAIL_ENABLED is not 'true' - it treats a skipped email as an error, unlike other email routes");
+      // This assertion used to expect a FAILURE here, on the premise that the
+      // route "treats a skipped email as an error, unlike other email routes".
+      // That premise is stale: emailService.sendOfferLetterEmail returns
+      // { skipped: false, disabled: true } when email is switched off
+      // (emailService.js:80-85), and sendOfferLetter only throws on
+      // `emailResult?.skipped` - so a disabled mailer is NOT an error and the
+      // route returns 200, consistent with every other email route. The bug
+      // was in the expectation, not the code. It went unnoticed because the
+      // suite never reached this line - admin login failed and 60+ tests
+      // cascaded into 401s.
+      expect(status === 200, `expected 200 with email disabled, got ${status}: ${JSON.stringify(data)}`);
       return;
     }
     expect(status === 200, `expected 200, got ${status}: ${JSON.stringify(data)}`);
@@ -888,12 +1051,28 @@ async function main() {
   }
   console.log("==============================================================");
 
-  await mongoose.disconnect();
+  await teardown();
   process.exit(failed.length ? 1 : 0);
 }
 
-main().catch(async (error) => {
-  console.error("Smoke test crashed:", error);
+// The bucket is emptied in a finally, NOT only in the Cleanup section.
+//
+// This is the exact hole that orphaned 15 files: the cleanup step sat behind an
+// admin cookie the run never obtained, so when the suite failed early nothing
+// deleted the uploads it had already made. A finally cannot be skipped by a
+// failed assertion, a crashed run, or a guard tripping mid-suite.
+async function teardown() {
+  try {
+    const purged = await purgeTestBucket();
+    if (purged.deleted) console.log(`\nTeardown: emptied ${purged.bucket} (${purged.deleted} object(s)).`);
+  } catch (error) {
+    console.error("Teardown: failed to empty the test bucket:", error.message);
+  }
   await mongoose.disconnect().catch(() => {});
+}
+
+main().catch(async (error) => {
+  console.error("\nSmoke test crashed:", error.message || error);
+  await teardown();
   process.exit(1);
 });

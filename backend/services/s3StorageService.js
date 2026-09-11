@@ -74,6 +74,23 @@ async function ensureBucketExists() {
   await verifyR2Connection();
 }
 
+// KNOWN ISSUE (logged, deliberately NOT fixed here - this change is about test
+// isolation, not storage semantics):
+//
+// `key.url || key` falls through to the OBJECT itself when it receives an
+// object whose `url` is empty or absent. `.replace()` on an object then throws
+// a TypeError, which localStorageService.js:153 catches and swallows - so the
+// delete becomes a silent no-op and the file is orphaned in the bucket.
+//
+// Reached via removeStudentAssets() -> removeLocalFile(student.offerLetter),
+// where `offerLetter` is a subdocument that exists with an empty nested `url`
+// whenever no letter has been generated yet.
+//
+// NOT affected: the five student document fields (resume, result, photo,
+// permissionLetter, aadhaarCard). Those hold a populated `url` string and take
+// the string path. Verified empirically rather than by reading - re-deriving
+// the key for 15 real stored files and issuing HeadObject for each resolved
+// 15/15, so deleting a student really does remove their documents from R2.
 function cleanKey(key) {
   if (!key) return "";
   const urlPath = key.url || key;

@@ -141,6 +141,43 @@ async function saveDivisionConfigurations(req, res, next) {
     const requested = req.body.configurations;
     if (!requested || typeof requested !== "object" || Array.isArray(requested)) return respondError(res, "Division configuration data is required.");
     const administration = await getAdministration();
+
+    // COMPLETENESS GUARD. The loop below rebuilds an entry for EVERY division
+    // from `requested[division] || {}`, so a payload that omits a division
+    // silently clears its configuration. That is correct for "save the whole
+    // config screen" - which is what this endpoint is - but catastrophic for a
+    // partial payload from a stale or half-loaded client, which would wipe
+    // every division it didn't know about.
+    //
+    // Presence is tested with hasOwnProperty rather than truthiness on purpose:
+    // a division sent as {} or { allowedBranches: [] } is an admin DELIBERATELY
+    // clearing it and must be honoured, while an absent key means the client
+    // never had it. Conflating those is exactly the bug being guarded against.
+    //
+    // `unknown` is checked too, catching a client whose division list predates
+    // a concurrent rename or delete.
+    const preview = (names) =>
+      names.slice(0, 5).join(", ") + (names.length > 5 ? `, +${names.length - 5} more` : "");
+
+    const known = administration.divisions;
+    const missing = known.filter((division) => !Object.prototype.hasOwnProperty.call(requested, division));
+    const unknown = Object.keys(requested).filter((division) => !known.includes(division));
+
+    if (missing.length) {
+      return respondError(
+        res,
+        `This save is missing ${missing.length} of ${known.length} divisions (${preview(missing)}) and ` +
+          `would have cleared their configuration. Reload the Division Configuration screen and try again.`
+      );
+    }
+    if (unknown.length) {
+      return respondError(
+        res,
+        `This save refers to ${unknown.length} division(s) that no longer exist (${preview(unknown)}). ` +
+          `Reload the Division Configuration screen and try again.`
+      );
+    }
+
     const configurations = {};
     for (const division of administration.divisions) {
       const entry = requested[division] || {};
