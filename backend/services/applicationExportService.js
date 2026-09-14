@@ -1,14 +1,38 @@
 const ExcelJS = require("exceljs");
 const Student = require("../models/Student");
 
-function formatExportDate(value) {
-  if (!value) return "-";
-  const dt = new Date(value);
-  if (isNaN(dt.getTime())) return "-";
-  const day = String(dt.getDate()).padStart(2, "0");
-  const month = String(dt.getMonth() + 1).padStart(2, "0");
-  const year = dt.getFullYear();
-  return `${day}-${month}-${year}`;
+// Every column renders a genuinely empty cell when the value is missing -
+// null, not "-". ExcelJS writes null as an empty cell; "-" was the old
+// convention and made the sheet un-filterable (a "-" is a value, so Excel's
+// "Blanks" filter never matched and COUNTA counted placeholders as data).
+//
+// The typeof guard is what stops "[object Object]" ever reaching a cell: every
+// one of the 14 data columns maps to a scalar path on the student document,
+// but a future schema change that turns one into a subdocument would otherwise
+// stringify silently instead of failing visibly.
+function cellText(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "object") return null;
+  const text = String(value).trim();
+  return text === "" ? null : text;
+}
+
+// A real Date, never a string: the cell is written as an Excel date serial so
+// it sorts and filters chronologically, with DD/MM/YYYY applied as a display
+// format on the column (see the DOB column's numFmt below). A formatted string
+// would sort lexically - every 01/xx before every 02/xx, regardless of year.
+//
+// Rebuilt from the stored value's UTC components rather than passed through
+// directly. Mongo stores these at UTC midnight and ExcelJS converts a Date to
+// its serial via getTime(), so passing the raw value through is correct only
+// while that holds; normalising here pins the cell to an integer serial - the
+// calendar day the registrar typed - regardless of the stored time component
+// or the exporting server's timezone.
+function excelDate(value) {
+  if (!value) return null;
+  const dt = value instanceof Date ? value : new Date(value);
+  if (isNaN(dt.getTime())) return null;
+  return new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate()));
 }
 
 // The three status values Student.status actually holds. Read from the live
@@ -47,22 +71,27 @@ async function generateApplicationsWorkbook(scope = "all") {
     views: [{ state: "frozen", ySplit: 1 }],
   });
 
+  // Exactly these 15 columns, in this order. "Application ID" is a label only -
+  // the underlying field is still referenceId and nothing was renamed in code.
   worksheet.columns = [
+    { header: "S.No.", key: "serial", width: 8, style: { numFmt: "0" } },
+    { header: "Name", key: "name", width: 26 },
     { header: "Application ID", key: "referenceId", width: 22 },
-    { header: "Student Name", key: "name", width: 26 },
-    { header: "Email", key: "email", width: 30 },
-    { header: "Phone", key: "phone", width: 16 },
-    { header: "College", key: "college", width: 35 },
+    { header: "Course", key: "course", width: 18 },
     { header: "Branch", key: "branch", width: 24 },
     { header: "Branch Code", key: "branchCode", width: 14 },
-    { header: "Division Allotted", key: "division", width: 24 },
-    { header: "Seat Number", key: "seatNumber", width: 16 },
+    { header: "Year", key: "year", width: 12 },
+    { header: "College Name", key: "collegeName", width: 35 },
+    { header: "College Location", key: "collegeLocation", width: 22 },
+    { header: "Email", key: "email", width: 30 },
+    { header: "Phone", key: "phone", width: 16 },
+    { header: "Gender", key: "gender", width: 12 },
+    // Written as a real Date, not text - see excelDate() above.
+    { header: "DOB", key: "dob", width: 14, style: { numFmt: "dd/mm/yyyy" } },
     // numFmt + a real Number below: written as a NUMBER, so Excel can sort and
     // average it. A string here would sort lexically ("10" before "9").
     { header: "CGPA", key: "cgpa", width: 10, style: { numFmt: "0.00" } },
-    { header: "Status", key: "status", width: 15 },
-    { header: "Submitted Date", key: "submittedDate", width: 18 },
-    { header: "Approval Date", key: "approvalDate", width: 18 },
+    { header: "Duration", key: "duration", width: 16 },
   ];
 
   const headerRow = worksheet.getRow(1);
@@ -77,34 +106,40 @@ async function generateApplicationsWorkbook(scope = "all") {
 
   const students = await Student.find(filter.query).sort({ submittedAt: -1, createdAt: -1 });
 
-  for (const student of students) {
+  students.forEach((student, index) => {
     const row = worksheet.addRow({
-      referenceId: student.referenceId || String(student._id || "-"),
-      name: student.name || "-",
-      email: student.email || "-",
-      phone: student.phone || "-",
-      college: student.collegeName || "-",
-      branch: student.branch || "-",
-      branchCode: student.branchCode || "-",
-      division:
-        student.trainingManagement?.division ||
-        student.recommendedBy ||
-        student.division ||
-        "-",
-      seatNumber:
-        student.serialNumber ||
-        student.trainingManagement?.seatNumber ||
-        student.seatNumber ||
-        "-",
+      // Generated at export time: the row's position in this exported set,
+      // starting at 1. Deliberately NOT student.serialNumber - that's a
+      // separate database field with its own meaning and its own gaps.
+      serial: index + 1,
+      name: cellText(student.name),
+      referenceId: cellText(student.referenceId),
+      course: cellText(student.course),
+      branch: cellText(student.branch),
+      // Empty for every record that predates the field. Renders as a blank
+      // cell, not "-", so "no code recorded" reads as absent rather than as a
+      // value - see cellText() above.
+      branchCode: cellText(student.branchCode),
+      year: cellText(student.year),
+      collegeName: cellText(student.collegeName),
+      // The registration form's "College Location (City)" input is persisted
+      // to the top-level `location` field, not to a `collegeLocation` one -
+      // see studentController.js's create (location: req.body.collegeLocation)
+      // and its read-back at collegeLocation: student.location. The
+      // collegeLocation paths that do exist are nested copies under
+      // trainingManagement/offerLetter, written from this field.
+      collegeLocation: cellText(student.location),
+      email: cellText(student.email),
+      phone: cellText(student.phone),
+      gender: cellText(student.gender),
+      dob: excelDate(student.dob),
       // Number, not a formatted string. null (not "-") when absent, so the cell
       // is genuinely empty rather than text that would break the column's type.
       cgpa: Number.isFinite(student.cgpa) ? student.cgpa : null,
-      status: student.status || "Pending",
-      submittedDate: formatExportDate(student.submittedAt || student.createdAt),
-      approvalDate: formatExportDate(student.approvedDate),
+      duration: cellText(student.internshipDuration),
     });
     row.alignment = { vertical: "middle" };
-  }
+  });
 
   return { workbook, count: students.length, label: filter.label };
 }
