@@ -1,5 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "redirects": [
+    {
+      "source": "/apply",
+      "destination": "/paid-internship",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",
