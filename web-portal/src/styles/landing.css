@@ -14,7 +14,7 @@
 }
 
 .landing-hero {
-  padding: 28px 0 30px;
+  padding: 28px 0 26px;
   border-bottom: 1px solid rgba(74, 112, 159, 0.22);
 }
 
@@ -46,16 +46,17 @@
   max-width: 920px;
   margin: 0;
   color: var(--heading);
-  font-size: clamp(2rem, 4vw, 3.6rem);
-  line-height: 1.06;
+  font-size: clamp(2rem, 5.2vw, 3.4rem);
+  line-height: 1.12;
 }
 
-.landing-welcome {
-  max-width: 780px;
-  margin: 22px 0 0;
+.landing-org {
+  max-width: 920px;
+  margin: 10px 0 0;
   color: var(--muted);
-  font-size: 1.06rem;
-  line-height: 1.65;
+  font-size: clamp(0.95rem, 2.1vw, 1.3rem);
+  font-weight: 600;
+  line-height: 1.45;
 }
 
 .landing-card-grid {

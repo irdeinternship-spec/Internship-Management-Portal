@@ -33,25 +33,20 @@ function Landing({ isPaid = false }) {
     <main className="landing-shell">
       <section className="landing-hero">
         <div className="landing-hero__identity">
-          <img src="/drdo-logo.png" alt="DRDO" className="landing-logo" />
+          <img
+            src="/irde-logo-256.png"
+            alt="Instruments Research & Development Establishment (IRDE), DRDO"
+            className="landing-logo"
+          />
           <div>
             <p className="landing-eyebrow">Government of India</p>
-            <h1>
-              Defence Research and Development Organisation (DRDO) Internship Management Portal
-            </h1>
-            {isPaid && (
-              <p style={{ fontSize: "28px", fontWeight: "700", color: "var(--primary)", marginTop: "12px", textAlign: "left" }}>
-                Under Paid Internship Program
-              </p>
-            )}
+            <h1>IRDE Paid Internship Programme</h1>
+            <p className="landing-org">
+              Instruments Research &amp; Development Establishment (IRDE), DRDO,
+              Dehradun – Uttarakhand
+            </p>
           </div>
         </div>
-
-        <p className="landing-welcome">
-          Welcome to the official internship management portal. Select the
-          relevant portal below to continue with an internship application or
-          administrative review.
-        </p>
       </section>
 
       <section className="landing-card-grid" aria-label="Portal options">
